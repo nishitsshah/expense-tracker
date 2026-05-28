@@ -118,7 +118,7 @@ export default function App() {
     showToast("Expense updated!");
   };
 
-  // ── DRAG TO REORDER CATEGORIES ──
+  // ── DRAG TO REORDER CATEGORIES (mouse + touch) ──
   const handleDragStart = (i) => setDragIdx(i);
   const handleDragOver = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
   const handleDrop = (i) => {
@@ -130,13 +130,33 @@ export default function App() {
     setDragIdx(null); setDragOverIdx(null);
   };
 
-  // Move up/down for mobile (no drag support)
-  const moveCategory = (i, dir) => {
-    const updated = [...categories];
-    const target = i + dir;
-    if (target < 0 || target >= updated.length) return;
-    [updated[i], updated[target]] = [updated[target], updated[i]];
-    setCategories(updated);
+  const touchDragIdx = useRef(null);
+
+  const handleTouchStart = (e, i) => {
+    touchDragIdx.current = i;
+    setDragIdx(i);
+  };
+
+  const handleTouchMove = (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const row = el?.closest("[data-cat-idx]");
+    if (row) {
+      const idx = parseInt(row.getAttribute("data-cat-idx"));
+      if (!isNaN(idx)) setDragOverIdx(idx);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchDragIdx.current !== null && dragOverIdx !== null && touchDragIdx.current !== dragOverIdx) {
+      const updated = [...categories];
+      const [moved] = updated.splice(touchDragIdx.current, 1);
+      updated.splice(dragOverIdx, 0, moved);
+      setCategories(updated);
+    }
+    touchDragIdx.current = null;
+    setDragIdx(null); setDragOverIdx(null);
   };
 
   // ── EXPORT ──
@@ -476,30 +496,29 @@ export default function App() {
 
             {/* Categories */}
             <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Categories <span style={{ fontSize: 11, textTransform: "none", letterSpacing: 0 }}>— drag ☰ or use ▲▼ to reorder</span>
+              Categories <span style={{ fontSize: 11, textTransform: "none", letterSpacing: 0 }}>— hold ☰ and drag to reorder</span>
             </div>
             <div className="card" style={{ marginBottom: 12 }}>
               {categories.map((c, i) => (
                 <div key={c.id}
+                  data-cat-idx={i}
                   className={`drag-row${dragOverIdx === i ? " over" : ""}`}
                   draggable
                   onDragStart={() => handleDragStart(i)}
                   onDragOver={e => handleDragOver(e, i)}
                   onDrop={() => handleDrop(i)}
                   onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-                  style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10, borderBottom: i < categories.length - 1 ? "1px solid #F2F2F7" : "none", opacity: dragIdx === i ? 0.4 : 1 }}>
-                  <span style={{ fontSize: 18, color: "#C7C7CC", cursor: "grab", touchAction: "none" }}>☰</span>
+                  style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10, borderBottom: i < categories.length - 1 ? "1px solid #F2F2F7" : "none", opacity: dragIdx === i ? 0.4 : 1, touchAction: "none" }}>
+                  <span
+                    style={{ fontSize: 20, color: "#C7C7CC", cursor: "grab", padding: "4px", touchAction: "none", userSelect: "none" }}
+                    onTouchStart={e => handleTouchStart(e, i)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                  >☰</span>
                   <div style={{ width: 34, height: 34, borderRadius: 10, background: c.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>
                     {c.icon}
                   </div>
                   <span style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{c.label}</span>
-                  {/* Up/Down for mobile */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <button onClick={() => moveCategory(i, -1)} disabled={i === 0}
-                      style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E5E5EA" : "#8E8E93", fontSize: 13, padding: "1px 4px", lineHeight: 1 }}>▲</button>
-                    <button onClick={() => moveCategory(i, 1)} disabled={i === categories.length - 1}
-                      style={{ background: "none", border: "none", cursor: i === categories.length - 1 ? "default" : "pointer", color: i === categories.length - 1 ? "#E5E5EA" : "#8E8E93", fontSize: 13, padding: "1px 4px", lineHeight: 1 }}>▼</button>
-                  </div>
                   <button onClick={() => setDeleteConfirmCat(c)}
                     style={{ background: "#FFE5E5", border: "none", cursor: "pointer", color: "#FF3B30", fontSize: 13, fontWeight: 500, padding: "5px 12px", borderRadius: 8 }}>
                     Delete
