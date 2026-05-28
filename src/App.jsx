@@ -29,7 +29,7 @@ const COLOR_OPTIONS = ["#FF9500","#FF2D55","#AF52DE","#007AFF","#34C759","#30B0C
 const fmt = (n) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 const fmtShort = (n) => n >= 100000 ? `₹${(n/100000).toFixed(1)}L` : n >= 1000 ? `₹${(n/1000).toFixed(1)}K` : fmt(n);
 
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const monthKey = (date) => date.slice(0, 7);
 const currentMonth = () => today().slice(0, 7);
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
