@@ -33,7 +33,7 @@ const today = () => new Date().toISOString().split("T")[0];
 const monthKey = (date) => date.slice(0, 7);
 const currentMonth = () => today().slice(0, 7);
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 function MonthNav({ value, onChange }) {
   const [y, m] = value.split("-").map(Number);
@@ -53,6 +53,7 @@ function MonthNav({ value, onChange }) {
 
 export default function App() {
   const [tab, setTab] = useState("add");
+  const [summaryTab, setSummaryTab] = useState("monthly");
   const [expenses, setExpenses] = useLocalStorage("et_expenses", []);
   const [categories, setCategories] = useLocalStorage("et_categories", DEFAULT_CATEGORIES);
   const [totalBudget, setTotalBudget] = useLocalStorage("et_budget", "");
@@ -72,7 +73,6 @@ export default function App() {
   const [showBudgetEdit, setShowBudgetEdit] = useState(false);
   const [editBudget, setEditBudget] = useState("");
   const [toast, setToast] = useState(null);
-  const [summaryView, setSummaryView] = useState("monthly");
   const [deleteConfirmCat, setDeleteConfirmCat] = useState(null);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
@@ -80,11 +80,8 @@ export default function App() {
   const importRef = useRef(null);
   const touchDragIdx = useRef(null);
 
-  // Check backup reminder on load
   useEffect(() => {
-    const now = new Date();
-    const dayOfMonth = now.getDate();
-    const daysSinceBackup = lastBackup ? Math.floor((now - new Date(lastBackup)) / (1000 * 60 * 60 * 24)) : 999;
+    const daysSinceBackup = lastBackup ? Math.floor((new Date() - new Date(lastBackup)) / (1000*60*60*24)) : 999;
     if (daysSinceBackup >= 30) setShowBackupReminder(true);
   }, []);
 
@@ -123,7 +120,6 @@ export default function App() {
     showToast("Expense updated!");
   };
 
-  // Drag reorder
   const handleDragStart = (i) => setDragIdx(i);
   const handleDragOver = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
   const handleDrop = (i) => {
@@ -134,7 +130,6 @@ export default function App() {
     setCategories(updated);
     setDragIdx(null); setDragOverIdx(null);
   };
-
   const handleTouchStart = (e, i) => { touchDragIdx.current = i; setDragIdx(i); };
   const handleTouchMove = (e) => {
     e.preventDefault();
@@ -153,97 +148,58 @@ export default function App() {
     touchDragIdx.current = null; setDragIdx(null); setDragOverIdx(null);
   };
 
-  // Export
   const buildEmailReport = (month) => {
     const [y, m] = month.split("-").map(Number);
     const monthName = `${MONTHS[m-1]} ${y}`;
     const mExp = expenses.filter(e => monthKey(e.date) === month);
     const spent = mExp.reduce((s, e) => s + e.amount, 0);
     const budget = parseFloat(totalBudget) || 0;
-
-    // prev month
     const prevDate = new Date(y, m-2);
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,"0")}`;
-    const prevExp = expenses.filter(e => monthKey(e.date) === prevMonth);
-    const prevSpent = prevExp.reduce((s, e) => s + e.amount, 0);
-    const vsLast = prevSpent > 0 ? ((spent - prevSpent) / prevSpent * 100).toFixed(1) : null;
-
-    const catTotals = {};
-    mExp.forEach(e => { catTotals[e.category] = (catTotals[e.category] || 0) + e.amount; });
-    const catCounts = {};
-    mExp.forEach(e => { catCounts[e.category] = (catCounts[e.category] || 0) + 1; });
-
-    const sortedCats = Object.entries(catTotals).sort((a, b) => b[1] - a[1]);
-
-    // day analysis
+    const prevSpent = expenses.filter(e => monthKey(e.date) === prevMonth).reduce((s, e) => s + e.amount, 0);
+    const catTotals = {}, catCounts = {};
+    mExp.forEach(e => { catTotals[e.category] = (catTotals[e.category]||0) + e.amount; catCounts[e.category] = (catCounts[e.category]||0) + 1; });
     const dayTotals = {};
-    mExp.forEach(e => { dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount; });
+    mExp.forEach(e => { dayTotals[e.date] = (dayTotals[e.date]||0) + e.amount; });
     const dayEntries = Object.entries(dayTotals);
-    const highestDay = dayEntries.sort((a,b) => b[1]-a[1])[0];
+    const highestDay = [...dayEntries].sort((a,b) => b[1]-a[1])[0];
     const daysActive = dayEntries.length;
     const daysInMonth = new Date(y, m, 0).getDate();
-    const dailyAvg = daysActive > 0 ? spent / daysActive : 0;
-
-    // weekday analysis
-    const weekdayTotals = Array(7).fill(0);
-    const weekdayCounts = Array(7).fill(0);
-    mExp.forEach(e => {
-      const d = new Date(e.date + "T00:00:00").getDay();
-      weekdayTotals[d] += e.amount;
-      weekdayCounts[d]++;
-    });
-    const weekdayAvgs = weekdayTotals.map((t, i) => weekdayCounts[i] > 0 ? t / weekdayCounts[i] : 0);
+    const dailyAvg = daysActive > 0 ? spent/daysActive : 0;
+    const weekdayTotals = Array(7).fill(0), weekdayCounts = Array(7).fill(0);
+    mExp.forEach(e => { const d = new Date(e.date+"T00:00:00").getDay(); weekdayTotals[d] += e.amount; weekdayCounts[d]++; });
+    const weekdayAvgs = weekdayTotals.map((t,i) => weekdayCounts[i] > 0 ? t/weekdayCounts[i] : 0);
     const topWeekday = weekdayAvgs.indexOf(Math.max(...weekdayAvgs));
     const weekendSpend = weekdayTotals[0] + weekdayTotals[6];
     const weekdaySpend = weekdayTotals.slice(1,6).reduce((a,b) => a+b, 0);
-
-    const top3 = [...mExp].sort((a,b) => b.amount - a.amount).slice(0,3);
+    const top3 = [...mExp].sort((a,b) => b.amount-a.amount).slice(0,3);
+    const vsLast = prevSpent > 0 ? ((spent-prevSpent)/prevSpent*100).toFixed(1) : null;
 
     let body = `Hi Nishit,\n\nHere is your expense report for ${monthName}.\n\n`;
     body += `━━━━━━━━━━━━━━━━━━━━\nOVERVIEW\n━━━━━━━━━━━━━━━━━━━━\n`;
     body += `Total Spent:      ${fmt(spent)}\n`;
-    if (budget > 0) {
-      body += `Monthly Budget:   ${fmt(budget)}\n`;
-      body += `Remaining:        ${fmt(Math.max(budget - spent, 0))}\n`;
-      body += `Budget Used:      ${Math.round((spent/budget)*100)}%\n`;
-    }
-    body += `Total Entries:    ${mExp.length} transactions\n`;
-    body += `Days Active:      ${daysActive} of ${daysInMonth} days\n`;
-    body += `Daily Average:    ${fmt(dailyAvg)} (on active days)\n`;
-    if (vsLast !== null) body += `vs Last Month:    ${spent > prevSpent ? "+" : ""}${vsLast}% (${fmt(Math.abs(spent - prevSpent))} ${spent > prevSpent ? "more" : "less"})\n`;
-
+    if (budget > 0) { body += `Monthly Budget:   ${fmt(budget)}\nRemaining:        ${fmt(Math.max(budget-spent,0))}\nBudget Used:      ${Math.round((spent/budget)*100)}%\n`; }
+    body += `Total Entries:    ${mExp.length} transactions\nDays Active:      ${daysActive} of ${daysInMonth} days\nDaily Average:    ${fmt(dailyAvg)}\n`;
+    if (vsLast !== null) body += `vs Last Month:    ${spent > prevSpent ? "+" : ""}${vsLast}% (${fmt(Math.abs(spent-prevSpent))} ${spent > prevSpent ? "more" : "less"})\n`;
     body += `\n━━━━━━━━━━━━━━━━━━━━\nSPENDING BY CATEGORY\n━━━━━━━━━━━━━━━━━━━━\n`;
-    sortedCats.forEach(([cid, amt]) => {
-      const c = cat(cid);
-      const pct = spent > 0 ? Math.round((amt/spent)*100) : 0;
-      const count = catCounts[cid] || 0;
-      body += `${c.label.padEnd(18)} ${fmt(amt).padStart(10)}  ${String(pct+"%").padStart(4)}  (${count} transactions)\n`;
+    Object.entries(catTotals).sort((a,b) => b[1]-a[1]).forEach(([cid, amt]) => {
+      const c = cat(cid); const pct = spent > 0 ? Math.round((amt/spent)*100) : 0;
+      body += `${c.label.padEnd(18)} ${fmt(amt).padStart(10)}  ${String(pct+"%").padStart(4)}  (${catCounts[cid]} transactions)\n`;
     });
-
     body += `\n━━━━━━━━━━━━━━━━━━━━\nANALYSIS & TRENDS\n━━━━━━━━━━━━━━━━━━━━\n`;
     if (highestDay) body += `Highest Spend Day:  ${highestDay[0]} — ${fmt(highestDay[1])}\n`;
-    body += `Top Spending Day:   ${DAYS[topWeekday]}s\n`;
-    body += `Weekend Spend:      ${fmt(weekendSpend)}\n`;
-    body += `Weekday Spend:      ${fmt(weekdaySpend)}\n`;
-    if (weekendSpend > weekdaySpend / 5 * 2) body += `Note: You tend to spend more on weekends.\n`;
-
+    body += `Top Spending Day:   ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][topWeekday]}s\nWeekend Spend:      ${fmt(weekendSpend)}\nWeekday Spend:      ${fmt(weekdaySpend)}\n`;
     body += `\n━━━━━━━━━━━━━━━━━━━━\nTOP 3 SINGLE EXPENSES\n━━━━━━━━━━━━━━━━━━━━\n`;
-    top3.forEach((e, i) => {
-      const c = cat(e.category);
-      body += `${i+1}. ${e.narration} — ${fmt(e.amount)} (${c.label}, ${e.date})\n`;
-    });
-
+    top3.forEach((e, i) => { body += `${i+1}. ${e.narration} — ${fmt(e.amount)} (${cat(e.category).label}, ${e.date})\n`; });
     const backupData = JSON.stringify({ expenses, categories, totalBudget, exportedAt: new Date().toISOString() });
-    body += `\n━━━━━━━━━━━━━━━━━━━━\nBACKUP DATA (save this to restore anytime)\n━━━━━━━━━━━━━━━━━━━━\n${backupData}`;
-
+    body += `\n━━━━━━━━━━━━━━━━━━━━\nBACKUP DATA\n━━━━━━━━━━━━━━━━━━━━\n${backupData}`;
     return { subject: `Expense Tracker — ${monthName} Report`, body };
   };
 
   const handleEmailReport = (month) => {
     const { subject, body } = buildEmailReport(month);
     setLastBackup(new Date().toISOString());
-    const mailto = `mailto:nishit.ssf@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.location.href = mailto;
+    window.location.href = `mailto:nishit.ssf@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     showToast("Opening mail app...");
   };
 
@@ -251,16 +207,13 @@ export default function App() {
     const data = { expenses, categories, totalBudget, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `expenses-backup-${today()}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `expenses-backup-${today()}.json`; a.click(); URL.revokeObjectURL(url);
     setLastBackup(new Date().toISOString());
     showToast("Data exported!");
   };
 
   const handleImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -271,89 +224,70 @@ export default function App() {
         showToast("Data imported!");
       } catch { showToast("Invalid file", false); }
     };
-    reader.readAsText(file);
-    e.target.value = "";
+    reader.readAsText(file); e.target.value = "";
   };
 
-  // Computed
   const monthExpenses = useMemo(() => expenses.filter(e => monthKey(e.date) === selectedMonth), [expenses, selectedMonth]);
   const totalSpent = useMemo(() => monthExpenses.reduce((s, e) => s + e.amount, 0), [monthExpenses]);
   const budget = parseFloat(totalBudget) || 0;
-  const budgetPct = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+  const budgetPct = budget > 0 ? Math.min((totalSpent/budget)*100, 100) : 0;
   const overBudget = budget > 0 && totalSpent > budget;
-
-  const catTotals = useMemo(() => {
-    const t = {}; monthExpenses.forEach(e => { t[e.category] = (t[e.category] || 0) + e.amount; }); return t;
-  }, [monthExpenses]);
-
-  const catCounts = useMemo(() => {
-    const t = {}; monthExpenses.forEach(e => { t[e.category] = (t[e.category] || 0) + 1; }); return t;
-  }, [monthExpenses]);
-
+  const catTotals = useMemo(() => { const t = {}; monthExpenses.forEach(e => { t[e.category] = (t[e.category]||0) + e.amount; }); return t; }, [monthExpenses]);
+  const catCounts = useMemo(() => { const t = {}; monthExpenses.forEach(e => { t[e.category] = (t[e.category]||0) + 1; }); return t; }, [monthExpenses]);
   const yearExpenses = useMemo(() => { const yr = selectedMonth.slice(0,4); return expenses.filter(e => e.date.startsWith(yr)); }, [expenses, selectedMonth]);
-  const yearlyByMonth = useMemo(() => {
-    const map = {}; yearExpenses.forEach(e => { const mk = monthKey(e.date); map[mk] = (map[mk]||0) + e.amount; }); return map;
-  }, [yearExpenses]);
+  const yearlyByMonth = useMemo(() => { const map = {}; yearExpenses.forEach(e => { const mk = monthKey(e.date); map[mk] = (map[mk]||0) + e.amount; }); return map; }, [yearExpenses]);
 
-  // Analysis data
-  const analysisData = useMemo(() => {
+  const insightsData = useMemo(() => {
     if (monthExpenses.length === 0) return null;
     const [y, m] = selectedMonth.split("-").map(Number);
-
-    // prev month
     const prevDate = new Date(y, m-2);
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth()+1).padStart(2,"0")}`;
-    const prevExp = expenses.filter(e => monthKey(e.date) === prevMonth);
-    const prevSpent = prevExp.reduce((s, e) => s + e.amount, 0);
-
-    // daily
+    const prevSpent = expenses.filter(e => monthKey(e.date) === prevMonth).reduce((s,e) => s+e.amount, 0);
     const dayTotals = {};
-    monthExpenses.forEach(e => { dayTotals[e.date] = (dayTotals[e.date] || 0) + e.amount; });
-    const dayEntries = Object.entries(dayTotals).sort((a,b) => a[0].localeCompare(b[0]));
+    monthExpenses.forEach(e => { dayTotals[e.date] = (dayTotals[e.date]||0) + e.amount; });
+    const dayEntries = Object.entries(dayTotals);
     const highestDay = [...dayEntries].sort((a,b) => b[1]-a[1])[0];
     const daysActive = dayEntries.length;
     const daysInMonth = new Date(y, m, 0).getDate();
-    const dailyAvg = daysActive > 0 ? totalSpent / daysActive : 0;
+    const dailyAvg = daysActive > 0 ? totalSpent/daysActive : 0;
     const noSpendDays = daysInMonth - daysActive;
-
-    // weekday
-    const weekdayTotals = Array(7).fill(0);
-    const weekdayCounts = Array(7).fill(0);
-    monthExpenses.forEach(e => {
-      const d = new Date(e.date + "T00:00:00").getDay();
-      weekdayTotals[d] += e.amount; weekdayCounts[d]++;
-    });
+    const weekdayTotals = Array(7).fill(0), weekdayCounts = Array(7).fill(0);
+    monthExpenses.forEach(e => { const d = new Date(e.date+"T00:00:00").getDay(); weekdayTotals[d] += e.amount; weekdayCounts[d]++; });
     const weekdayAvgs = weekdayTotals.map((t,i) => weekdayCounts[i] > 0 ? t/weekdayCounts[i] : 0);
     const topWeekday = weekdayAvgs.indexOf(Math.max(...weekdayAvgs));
     const weekendSpend = weekdayTotals[0] + weekdayTotals[6];
     const weekdaySpend = weekdayTotals.slice(1,6).reduce((a,b) => a+b, 0);
-
-    // streak
     const allDates = new Set(monthExpenses.map(e => e.date));
     let maxStreak = 0, curStreak = 0;
     for (let d = 1; d <= daysInMonth; d++) {
       const dk = `${selectedMonth}-${String(d).padStart(2,"0")}`;
       if (allDates.has(dk)) { curStreak++; maxStreak = Math.max(maxStreak, curStreak); } else curStreak = 0;
     }
-
-    // top 3 expenses
-    const top3 = [...monthExpenses].sort((a,b) => b.amount - a.amount).slice(0,3);
-
-    // spending trend (first half vs second half)
-    const mid = Math.floor(daysInMonth / 2);
+    const top3 = [...monthExpenses].sort((a,b) => b.amount-a.amount).slice(0,3);
+    const mid = Math.floor(daysInMonth/2);
     const firstHalf = monthExpenses.filter(e => parseInt(e.date.split("-")[2]) <= mid).reduce((s,e) => s+e.amount, 0);
     const secondHalf = monthExpenses.filter(e => parseInt(e.date.split("-")[2]) > mid).reduce((s,e) => s+e.amount, 0);
-
     return { prevSpent, highestDay, daysActive, daysInMonth, dailyAvg, noSpendDays, topWeekday, weekendSpend, weekdaySpend, weekdayTotals, weekdayCounts, maxStreak, top3, firstHalf, secondHalf };
-  }, [monthExpenses, selectedMonth, totalSpent]);
+  }, [monthExpenses, selectedMonth, totalSpent, expenses]);
 
   const TABS = [
     { id: "add", label: "Add", icon: "＋" },
     { id: "history", label: "History", icon: "≡" },
     { id: "summary", label: "Summary", icon: "◑" },
-    { id: "analysis", label: "Analysis", icon: "📊" },
     { id: "settings", label: "Settings", icon: "⚙" },
   ];
+
+  const SubToggle = ({ value, onChange, options }) => (
+    <div style={{ display: "flex", background: "#E5E5EA", borderRadius: 10, padding: 2, marginBottom: 20 }}>
+      {options.map(([v, l]) => (
+        <button key={v} onClick={() => onChange(v)} style={{
+          flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
+          background: value === v ? "#fff" : "transparent", color: value === v ? "#1C1C1E" : "#8E8E93",
+          boxShadow: value === v ? "0 1px 3px rgba(0,0,0,.12)" : "none", transition: "all .15s"
+        }}>{l}</button>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{ fontFamily: "-apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif", background: "#F2F2F7", minHeight: "100vh", maxWidth: 430, margin: "0 auto", position: "relative" }}>
@@ -375,7 +309,6 @@ export default function App() {
         .stat-card { background: #fff; border-radius: 14px; padding: 14px 16px; flex: 1; }
       `}</style>
 
-      {/* TOP HEADER */}
       <div style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(242,242,247,.95)", backdropFilter: "blur(20px)", borderBottom: "1px solid #E5E5EA", padding: "14px 20px 12px", textAlign: "center" }}>
         <div style={{ fontSize: 17, fontWeight: 600, color: "#1C1C1E", letterSpacing: -0.3 }}>💰 Expense Tracker</div>
       </div>
@@ -386,7 +319,6 @@ export default function App() {
         {tab === "add" && (
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 28, letterSpacing: -0.5 }}>Add Expense</h1>
-
             <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 10 }}>₹ Amount</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -395,14 +327,12 @@ export default function App() {
                   type="number" min="0" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
               </div>
             </div>
-
             <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 10 }}>📝 Narration</div>
               <input className="input-field" style={{ fontSize: 16 }} placeholder="What was this for?"
                 value={narration} onChange={e => setNarration(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleAdd()} />
             </div>
-
             <div className="card" style={{ padding: "16px 20px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>Category</div>
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
@@ -416,12 +346,10 @@ export default function App() {
                 ))}
               </div>
             </div>
-
             <div className="card" style={{ padding: "16px 20px", marginBottom: 24 }}>
               <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 10 }}>📅 Date</div>
               <input className="input-field" type="date" value={date} style={{ fontSize: 16 }} onChange={e => setDate(e.target.value)} />
             </div>
-
             <button onClick={handleAdd} style={{
               width: "100%", padding: "18px", borderRadius: 16, border: "none", cursor: "pointer",
               background: amount && narration ? "#007AFF" : "#C7C7CC",
@@ -453,7 +381,7 @@ export default function App() {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 500, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.narration}</div>
                           <div style={{ fontSize: 12, color: "#8E8E93", marginTop: 2 }}>
-                            {c.label} · {new Date(e.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                            {c.label} · {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -478,20 +406,12 @@ export default function App() {
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 20, letterSpacing: -0.5 }}>Summary</h1>
             <MonthNav value={selectedMonth} onChange={setSelectedMonth} />
+            <SubToggle value={summaryTab} onChange={setSummaryTab} options={[["monthly","Monthly"],["yearly","Yearly"],["insights","Insights"]]} />
 
-            <div style={{ display: "flex", background: "#E5E5EA", borderRadius: 10, padding: 2, marginBottom: 20 }}>
-              {["monthly","yearly"].map(v => (
-                <button key={v} onClick={() => setSummaryView(v)} style={{
-                  flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500,
-                  background: summaryView === v ? "#fff" : "transparent", color: summaryView === v ? "#1C1C1E" : "#8E8E93",
-                  boxShadow: summaryView === v ? "0 1px 3px rgba(0,0,0,.12)" : "none", transition: "all .15s"
-                }}>{v.charAt(0).toUpperCase() + v.slice(1)}</button>
-              ))}
-            </div>
-
-            {summaryView === "monthly" ? (
+            {/* MONTHLY */}
+            {summaryTab === "monthly" && (
               monthExpenses.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "80px 0" }}>
+                <div style={{ textAlign: "center", padding: "60px 0" }}>
                   <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
                   <div style={{ fontWeight: 600, fontSize: 17, color: "#8E8E93" }}>No expenses yet</div>
                 </div>
@@ -516,7 +436,7 @@ export default function App() {
                           <div style={{ height: "100%", width: `${budgetPct}%`, background: overBudget ? "#FF3B30" : budgetPct >= 80 ? "#FF9500" : "#34C759", borderRadius: 99, transition: "width .4s" }} />
                         </div>
                         <div style={{ fontSize: 13, color: overBudget ? "#FF3B30" : "#8E8E93", textAlign: "right" }}>
-                          {overBudget ? `⚠ Over by ${fmt(totalSpent - budget)}` : `${fmt(Math.max(budget-totalSpent,0))} remaining`}
+                          {overBudget ? `⚠ Over by ${fmt(totalSpent-budget)}` : `${fmt(Math.max(budget-totalSpent,0))} remaining`}
                         </div>
                       </>
                     )}
@@ -531,16 +451,14 @@ export default function App() {
                   <div className="card" style={{ padding: 16 }}>
                     <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 14 }}>By Category</div>
                     {Object.entries(catTotals).sort((a,b) => b[1]-a[1]).map(([cid, spent]) => {
-                      const c = cat(cid);
-                      const pct = totalSpent > 0 ? (spent/totalSpent)*100 : 0;
-                      const count = catCounts[cid] || 0;
+                      const c = cat(cid); const pct = totalSpent > 0 ? (spent/totalSpent)*100 : 0; const count = catCounts[cid] || 0;
                       return (
                         <div key={cid} style={{ marginBottom: 14 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                             <span style={{ width: 10, height: 10, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
                             <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{c.label}</span>
-                            <span style={{ fontSize: 12, color: "#8E8E93" }}>{count} txn</span>
-                            <span style={{ fontSize: 12, color: "#8E8E93", marginLeft: 6 }}>{Math.round(pct)}%</span>
+                            <span style={{ fontSize: 12, color: "#8E8E93" }}>({count})</span>
+                            <span style={{ fontSize: 12, color: "#8E8E93", marginLeft: 4 }}>{Math.round(pct)}%</span>
                             <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 6 }}>{fmt(spent)}</span>
                           </div>
                           <div style={{ height: 5, background: "#F2F2F7", borderRadius: 99, overflow: "hidden" }}>
@@ -550,14 +468,15 @@ export default function App() {
                       );
                     })}
                   </div>
-
-                  <button onClick={() => handleEmailReport(selectedMonth)} style={{
-                    width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer",
-                    background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600
-                  }}>📧 Email Monthly Report</button>
+                  <button onClick={() => handleEmailReport(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
+                    📧 Email Monthly Report
+                  </button>
                 </div>
               )
-            ) : (
+            )}
+
+            {/* YEARLY */}
+            {summaryTab === "yearly" && (
               <div className="card" style={{ padding: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 14 }}>Monthly Spending — {selectedMonth.slice(0,4)}</div>
                 {Array.from({ length: 12 }, (_, i) => {
@@ -570,144 +489,128 @@ export default function App() {
                       <div style={{ flex: 1, height: 6, background: "#F2F2F7", borderRadius: 99, overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${(amt/maxAmt)*100}%`, background: "#007AFF", borderRadius: 99 }} />
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 500, width: 80, textAlign: "right", color: amt ? "#1C1C1E" : "#C7C7CC" }}>{amt ? fmtShort(amt) : "—"}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, width: 72, textAlign: "right", color: amt ? "#1C1C1E" : "#C7C7CC" }}>{amt ? fmtShort(amt) : "—"}</span>
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
-        )}
 
-        {/* ── ANALYSIS ── */}
-        {tab === "analysis" && (
-          <div style={{ padding: "20px" }}>
-            <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 20, letterSpacing: -0.5 }}>Analysis</h1>
-            <MonthNav value={selectedMonth} onChange={setSelectedMonth} />
-
-            {!analysisData ? (
-              <div style={{ textAlign: "center", padding: "80px 0" }}>
-                <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
-                <div style={{ fontWeight: 600, fontSize: 17, color: "#8E8E93" }}>No data for this month</div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                {/* Overview stats */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <div className="stat-card">
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>DAILY AVERAGE</div>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{fmtShort(analysisData.dailyAvg)}</div>
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>on active days</div>
-                  </div>
-                  <div className="stat-card">
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>ACTIVE DAYS</div>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{analysisData.daysActive} / {analysisData.daysInMonth}</div>
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{analysisData.noSpendDays} no-spend days</div>
-                  </div>
-                  <div className="stat-card">
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>LONGEST STREAK</div>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{analysisData.maxStreak} days</div>
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>consecutive spending</div>
-                  </div>
-                  <div className="stat-card">
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>VS LAST MONTH</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: analysisData.prevSpent === 0 ? "#1C1C1E" : totalSpent > analysisData.prevSpent ? "#FF3B30" : "#34C759" }}>
-                      {analysisData.prevSpent === 0 ? "—" : `${totalSpent > analysisData.prevSpent ? "+" : ""}${((totalSpent - analysisData.prevSpent)/analysisData.prevSpent*100).toFixed(0)}%`}
-                    </div>
-                    <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{analysisData.prevSpent > 0 ? fmtShort(analysisData.prevSpent) + " last month" : "no prev data"}</div>
-                  </div>
+            {/* INSIGHTS */}
+            {summaryTab === "insights" && (
+              !insightsData ? (
+                <div style={{ textAlign: "center", padding: "60px 0" }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+                  <div style={{ fontWeight: 600, fontSize: 17, color: "#8E8E93" }}>No data for this month</div>
                 </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div className="stat-card">
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>DAILY AVERAGE</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>{fmtShort(insightsData.dailyAvg)}</div>
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>on active days</div>
+                    </div>
+                    <div className="stat-card">
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>ACTIVE DAYS</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.daysActive} / {insightsData.daysInMonth}</div>
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.noSpendDays} no-spend days</div>
+                    </div>
+                    <div className="stat-card">
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>LONGEST STREAK</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.maxStreak} days</div>
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>consecutive spending</div>
+                    </div>
+                    <div className="stat-card">
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>VS LAST MONTH</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: insightsData.prevSpent === 0 ? "#1C1C1E" : totalSpent > insightsData.prevSpent ? "#FF3B30" : "#34C759" }}>
+                        {insightsData.prevSpent === 0 ? "—" : `${totalSpent > insightsData.prevSpent ? "+" : ""}${((totalSpent-insightsData.prevSpent)/insightsData.prevSpent*100).toFixed(0)}%`}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.prevSpent > 0 ? fmtShort(insightsData.prevSpent)+" last month" : "no prev data"}</div>
+                    </div>
+                  </div>
 
-                {/* Highest day */}
-                {analysisData.highestDay && (
+                  {insightsData.highestDay && (
+                    <div className="card" style={{ padding: 16 }}>
+                      <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 8 }}>HIGHEST SPEND DAY</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ fontWeight: 600, fontSize: 16 }}>{new Date(insightsData.highestDay[0]+"T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long" })}</div>
+                        <div style={{ fontWeight: 700, fontSize: 18, color: "#FF3B30" }}>{fmt(insightsData.highestDay[1])}</div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="card" style={{ padding: 16 }}>
-                    <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 8 }}>HIGHEST SPEND DAY</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontWeight: 600, fontSize: 16 }}>
-                        {new Date(analysisData.highestDay[0] + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long" })}
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 18, color: "#FF3B30" }}>{fmt(analysisData.highestDay[1])}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Weekday breakdown */}
-                <div className="card" style={{ padding: 16 }}>
-                  <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING BY DAY OF WEEK</div>
-                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, i) => {
-                    const amt = analysisData.weekdayTotals[i];
-                    const maxDay = Math.max(...analysisData.weekdayTotals, 1);
-                    const isTop = i === analysisData.topWeekday && amt > 0;
-                    return (
-                      <div key={d} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                        <span style={{ fontSize: 12, color: isTop ? "#007AFF" : "#8E8E93", width: 28, fontWeight: isTop ? 600 : 400 }}>{d}</span>
-                        <div style={{ flex: 1, height: 6, background: "#F2F2F7", borderRadius: 99, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${(amt/maxDay)*100}%`, background: isTop ? "#007AFF" : "#C7C7CC", borderRadius: 99 }} />
+                    <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING BY DAY OF WEEK</div>
+                    {DAYS.map((d, i) => {
+                      const amt = insightsData.weekdayTotals[i];
+                      const maxDay = Math.max(...insightsData.weekdayTotals, 1);
+                      const isTop = i === insightsData.topWeekday && amt > 0;
+                      return (
+                        <div key={d} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                          <span style={{ fontSize: 12, color: isTop ? "#007AFF" : "#8E8E93", width: 28, fontWeight: isTop ? 600 : 400 }}>{d}</span>
+                          <div style={{ flex: 1, height: 6, background: "#F2F2F7", borderRadius: 99, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${(amt/maxDay)*100}%`, background: isTop ? "#007AFF" : "#C7C7CC", borderRadius: 99 }} />
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? "#007AFF" : amt ? "#1C1C1E" : "#C7C7CC", width: 66, textAlign: "right" }}>
+                            {amt ? fmtShort(amt) : "—"}
+                          </span>
                         </div>
-                        <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? "#007AFF" : amt ? "#1C1C1E" : "#C7C7CC", width: 70, textAlign: "right" }}>
-                          {amt ? fmtShort(amt) : "—"}
-                        </span>
+                      );
+                    })}
+                    <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid #F2F2F7" }}>
+                      <div style={{ flex: 1, textAlign: "center" }}>
+                        <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKDAYS</div>
+                        <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekdaySpend)}</div>
                       </div>
-                    );
-                  })}
-                  <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid #F2F2F7" }}>
-                    <div style={{ flex: 1, textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKDAYS</div>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(analysisData.weekdaySpend)}</div>
-                    </div>
-                    <div style={{ width: 1, background: "#F2F2F7" }} />
-                    <div style={{ flex: 1, textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKENDS</div>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(analysisData.weekendSpend)}</div>
+                      <div style={{ width: 1, background: "#F2F2F7" }} />
+                      <div style={{ flex: 1, textAlign: "center" }}>
+                        <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKENDS</div>
+                        <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekendSpend)}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* First vs second half */}
-                <div className="card" style={{ padding: 16 }}>
-                  <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING TREND</div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <div style={{ flex: 1, textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: "#8E8E93" }}>1ST HALF</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4 }}>{fmtShort(analysisData.firstHalf)}</div>
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING TREND</div>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <div style={{ flex: 1, textAlign: "center" }}>
+                        <div style={{ fontSize: 11, color: "#8E8E93" }}>1ST HALF</div>
+                        <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4 }}>{fmtShort(insightsData.firstHalf)}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", fontSize: 20 }}>{insightsData.secondHalf > insightsData.firstHalf ? "📈" : "📉"}</div>
+                      <div style={{ flex: 1, textAlign: "center" }}>
+                        <div style={{ fontSize: 11, color: "#8E8E93" }}>2ND HALF</div>
+                        <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4, color: insightsData.secondHalf > insightsData.firstHalf ? "#FF3B30" : "#34C759" }}>{fmtShort(insightsData.secondHalf)}</div>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", fontSize: 20 }}>
-                      {analysisData.secondHalf > analysisData.firstHalf ? "📈" : "📉"}
-                    </div>
-                    <div style={{ flex: 1, textAlign: "center" }}>
-                      <div style={{ fontSize: 11, color: "#8E8E93" }}>2ND HALF</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4, color: analysisData.secondHalf > analysisData.firstHalf ? "#FF3B30" : "#34C759" }}>{fmtShort(analysisData.secondHalf)}</div>
+                    <div style={{ fontSize: 12, color: "#8E8E93", textAlign: "center", marginTop: 10 }}>
+                      {insightsData.secondHalf > insightsData.firstHalf ? "You spend more in the second half of the month" : "You spend more in the first half of the month"}
                     </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "#8E8E93", textAlign: "center", marginTop: 10 }}>
-                    {analysisData.secondHalf > analysisData.firstHalf ? "You spend more in the second half of the month" : "You spend more in the first half of the month"}
-                  </div>
-                </div>
 
-                {/* Top 3 expenses */}
-                <div className="card" style={{ padding: 16 }}>
-                  <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>TOP 3 SINGLE EXPENSES</div>
-                  {analysisData.top3.map((e, i) => {
-                    const c = cat(e.category);
-                    return (
-                      <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: i < 2 ? "1px solid #F2F2F7" : "none" }}>
-                        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#F2F2F7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#8E8E93", flexShrink: 0 }}>{i+1}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.narration}</div>
-                          <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{c.label} · {e.date}</div>
+                  <div className="card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>TOP 3 SINGLE EXPENSES</div>
+                    {insightsData.top3.map((e, i) => {
+                      const c = cat(e.category);
+                      return (
+                        <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: i < 2 ? "1px solid #F2F2F7" : "none" }}>
+                          <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#F2F2F7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#8E8E93", flexShrink: 0 }}>{i+1}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 500, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.narration}</div>
+                            <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{c.label} · {e.date}</div>
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 15, flexShrink: 0 }}>{fmt(e.amount)}</div>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 15, flexShrink: 0 }}>{fmt(e.amount)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
 
-                <button onClick={() => handleEmailReport(selectedMonth)} style={{
-                  width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer",
-                  background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600
-                }}>📧 Email Full Report</button>
-              </div>
+                  <button onClick={() => handleEmailReport(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
+                    📧 Email Full Report
+                  </button>
+                </div>
+              )
             )}
           </div>
         )}
@@ -724,8 +627,7 @@ export default function App() {
                   <div style={{ fontWeight: 500, fontSize: 16 }}>Monthly Budget</div>
                   <div style={{ fontSize: 14, color: "#8E8E93", marginTop: 2 }}>{totalBudget ? fmt(parseFloat(totalBudget)) : "Not set"}</div>
                 </div>
-                <button onClick={() => { setEditBudget(totalBudget); setShowBudgetEdit(true); }}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#007AFF", fontSize: 15, fontWeight: 500 }}>Edit</button>
+                <button onClick={() => { setEditBudget(totalBudget); setShowBudgetEdit(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#007AFF", fontSize: 15, fontWeight: 500 }}>Edit</button>
               </div>
             </div>
 
@@ -740,7 +642,7 @@ export default function App() {
                 <button onClick={() => importRef.current.click()} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", borderRight: "1px solid #F2F2F7", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 24 }}>📥</span>
                   <span style={{ fontSize: 14, fontWeight: 600, color: "#007AFF" }}>Import</span>
-                  <span style={{ fontSize: 11, color: "#8E8E93" }}>Restore file</span>
+                  <span style={{ fontSize: 11, color: "#8E8E93" }}>Restore</span>
                 </button>
                 <button onClick={() => handleEmailReport(currentMonth())} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 24 }}>📧</span>
@@ -764,13 +666,10 @@ export default function App() {
                   onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                   style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10, borderBottom: i < categories.length-1 ? "1px solid #F2F2F7" : "none", opacity: dragIdx === i ? 0.4 : 1, touchAction: "none" }}>
                   <span style={{ fontSize: 18, color: "#C7C7CC", cursor: "grab", padding: "4px", userSelect: "none" }}
-                    onTouchStart={e => handleTouchStart(e, i)}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}>☰</span>
+                    onTouchStart={e => handleTouchStart(e, i)} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>☰</span>
                   <div style={{ width: 14, height: 14, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
                   <span style={{ flex: 1, fontWeight: 500, fontSize: 15 }}>{c.label}</span>
-                  <button onClick={() => setDeleteConfirmCat(c)}
-                    style={{ background: "#FFE5E5", border: "none", cursor: "pointer", color: "#FF3B30", fontSize: 13, fontWeight: 500, padding: "5px 12px", borderRadius: 8 }}>Delete</button>
+                  <button onClick={() => setDeleteConfirmCat(c)} style={{ background: "#FFE5E5", border: "none", cursor: "pointer", color: "#FF3B30", fontSize: 13, fontWeight: 500, padding: "5px 12px", borderRadius: 8 }}>Delete</button>
                 </div>
               ))}
             </div>
@@ -785,10 +684,10 @@ export default function App() {
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "rgba(255,255,255,.92)", borderTop: "1px solid #E5E5EA", backdropFilter: "blur(20px)", display: "flex", paddingBottom: 16, zIndex: 50 }}>
         {TABS.map(t => (
           <button key={t.id} className="nav-btn" onClick={() => setTab(t.id)}>
-            <div style={{ fontSize: t.id === "add" ? 18 : 17, width: 26, height: 26, borderRadius: t.id === "add" ? "50%" : 6, background: t.id === "add" ? (tab === "add" ? "#007AFF" : "#C7C7CC") : "none", display: "flex", alignItems: "center", justifyContent: "center", color: t.id === "add" ? "#fff" : (tab === t.id ? "#007AFF" : "#8E8E93") }}>
+            <div style={{ fontSize: t.id === "add" ? 18 : 17, width: 28, height: 28, borderRadius: t.id === "add" ? "50%" : 6, background: t.id === "add" ? (tab === "add" ? "#007AFF" : "#C7C7CC") : "none", display: "flex", alignItems: "center", justifyContent: "center", color: t.id === "add" ? "#fff" : (tab === t.id ? "#007AFF" : "#8E8E93") }}>
               {t.icon}
             </div>
-            <span style={{ fontSize: 10, color: tab === t.id ? "#007AFF" : "#8E8E93", fontWeight: tab === t.id ? 600 : 400 }}>{t.label}</span>
+            <span style={{ fontSize: 11, color: tab === t.id ? "#007AFF" : "#8E8E93", fontWeight: tab === t.id ? 600 : 400 }}>{t.label}</span>
           </button>
         ))}
       </div>
@@ -804,14 +703,8 @@ export default function App() {
               <div style={{ color: "#8E8E93", fontSize: 15 }}>It's been over 30 days since your last backup. Send your report to email to keep your data safe.</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button className="pill-btn" style={{ width: "100%", background: "#007AFF", color: "#fff" }}
-                onClick={() => { handleEmailReport(currentMonth()); setShowBackupReminder(false); }}>
-                📧 Email Report & Backup
-              </button>
-              <button className="pill-btn" style={{ width: "100%", background: "#F2F2F7", color: "#1C1C1E" }}
-                onClick={() => setShowBackupReminder(false)}>
-                Remind me later
-              </button>
+              <button className="pill-btn" style={{ width: "100%", background: "#007AFF", color: "#fff" }} onClick={() => { handleEmailReport(currentMonth()); setShowBackupReminder(false); }}>📧 Email Report & Backup</button>
+              <button className="pill-btn" style={{ width: "100%", background: "#F2F2F7", color: "#1C1C1E" }} onClick={() => setShowBackupReminder(false)}>Remind me later</button>
             </div>
           </div>
         </div>
@@ -911,7 +804,7 @@ export default function App() {
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6 }}>NARRATION</div>
-                <input className="ios-input" placeholder="What was this for?" value={editExpense.narration} onChange={e => setEditExpense(p => ({ ...p, narration: e.target.value }))} />
+                <input className="ios-input" value={editExpense.narration} onChange={e => setEditExpense(p => ({ ...p, narration: e.target.value }))} />
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 8 }}>CATEGORY</div>
