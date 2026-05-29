@@ -1,4 +1,7 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+
+const GOOGLE_CLIENT_ID = "82756044682-ovvcfig11hhc3v1grbb2vgsus4k9k90o.apps.googleusercontent.com";
+const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 function useLocalStorage(key, defaultValue) {
   const [value, setValue] = useState(() => {
@@ -58,6 +61,7 @@ export default function App() {
   const [categories, setCategories] = useLocalStorage("et_categories", DEFAULT_CATEGORIES);
   const [totalBudget, setTotalBudget] = useLocalStorage("et_budget", "");
   const [lastBackup, setLastBackup] = useLocalStorage("et_last_backup", null);
+  const [driveFileId, setDriveFileId] = useLocalStorage("et_drive_file_id", null);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
 
   const [amount, setAmount] = useState("");
@@ -77,8 +81,108 @@ export default function App() {
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const [googleToken, setGoogleToken] = useLocalStorage("et_google_token", null);
+  const [googleUser, setGoogleUser] = useLocalStorage("et_google_user", null);
+  const [driveStatus, setDriveStatus] = useState("");
   const importRef = useRef(null);
   const touchDragIdx = useRef(null);
+  const tokenClientRef = useRef(null);
+
+  // Load Google Identity Services
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => initGoogleAuth();
+    document.head.appendChild(script);
+  }, []);
+
+  const initGoogleAuth = () => {
+    if (!window.google) return;
+    tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: GOOGLE_SCOPE + " email profile",
+      callback: (response) => {
+        if (response.access_token) {
+          setGoogleToken(response.access_token);
+          fetchGoogleUser(response.access_token);
+        }
+      },
+    });
+  };
+
+  const fetchGoogleUser = async (token) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setGoogleUser({ name: data.given_name || data.name, email: data.email, picture: data.picture });
+    } catch {}
+  };
+
+  const handleGoogleLogin = () => {
+    if (!tokenClientRef.current) {
+      showToast("Google not loaded yet, try again", false);
+      return;
+    }
+    tokenClientRef.current.requestAccessToken();
+  };
+
+  const handleGoogleLogout = () => {
+    if (googleToken && window.google) {
+      window.google.accounts.oauth2.revoke(googleToken);
+    }
+    setGoogleToken(null);
+    setGoogleUser(null);
+    showToast("Signed out of Google");
+  };
+
+  // Save backup to Google Drive
+  const saveToDrive = useCallback(async (token, data) => {
+    const content = JSON.stringify(data, null, 2);
+    const fileName = `expense-tracker-backup.json`;
+    const metadata = { name: fileName, mimeType: "application/json" };
+
+    try {
+      setDriveStatus("saving");
+      let response;
+      if (driveFileId) {
+        // Update existing file
+        response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=multipart`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/related; boundary=boundary" },
+          body: `--boundary\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--boundary\r\nContent-Type: application/json\r\n\r\n${content}\r\n--boundary--`
+        });
+      } else {
+        // Create new file
+        response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/related; boundary=boundary" },
+          body: `--boundary\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(metadata)}\r\n--boundary\r\nContent-Type: application/json\r\n\r\n${content}\r\n--boundary--`
+        });
+      }
+      if (response.ok) {
+        const result = await response.json();
+        if (result.id) setDriveFileId(result.id);
+        setLastBackup(new Date().toISOString());
+        setDriveStatus("saved");
+        setTimeout(() => setDriveStatus(""), 3000);
+        return true;
+      } else if (response.status === 401) {
+        // Token expired
+        setGoogleToken(null);
+        setDriveStatus("");
+        showToast("Google session expired, please reconnect", false);
+        return false;
+      }
+    } catch (e) {
+      setDriveStatus("");
+      showToast("Drive save failed", false);
+      return false;
+    }
+  }, [driveFileId, setDriveFileId, setLastBackup, setGoogleToken]);
 
   useEffect(() => {
     const daysSinceBackup = lastBackup ? Math.floor((new Date() - new Date(lastBackup)) / (1000*60*60*24)) : 999;
@@ -91,7 +195,8 @@ export default function App() {
   const handleAdd = () => {
     if (!amount || isNaN(+amount) || +amount <= 0) return showToast("Enter a valid amount", false);
     if (!narration.trim()) return showToast("Add a narration", false);
-    setExpenses(p => [{ id: Date.now(), amount: parseFloat(amount), narration: narration.trim(), category: selCat, date }, ...p]);
+    const newExpenses = [{ id: Date.now(), amount: parseFloat(amount), narration: narration.trim(), category: selCat, date }, ...expenses];
+    setExpenses(newExpenses);
     setAmount(""); setNarration("");
     showToast("Expense added!");
   };
@@ -124,11 +229,8 @@ export default function App() {
   const handleDragOver = (e, i) => { e.preventDefault(); setDragOverIdx(i); };
   const handleDrop = (i) => {
     if (dragIdx === null || dragIdx === i) { setDragIdx(null); setDragOverIdx(null); return; }
-    const updated = [...categories];
-    const [moved] = updated.splice(dragIdx, 1);
-    updated.splice(i, 0, moved);
-    setCategories(updated);
-    setDragIdx(null); setDragOverIdx(null);
+    const updated = [...categories]; const [moved] = updated.splice(dragIdx, 1); updated.splice(i, 0, moved);
+    setCategories(updated); setDragIdx(null); setDragOverIdx(null);
   };
   const handleTouchStart = (e, i) => { touchDragIdx.current = i; setDragIdx(i); };
   const handleTouchMove = (e) => {
@@ -140,10 +242,7 @@ export default function App() {
   };
   const handleTouchEnd = () => {
     if (touchDragIdx.current !== null && dragOverIdx !== null && touchDragIdx.current !== dragOverIdx) {
-      const updated = [...categories];
-      const [moved] = updated.splice(touchDragIdx.current, 1);
-      updated.splice(dragOverIdx, 0, moved);
-      setCategories(updated);
+      const updated = [...categories]; const [moved] = updated.splice(touchDragIdx.current, 1); updated.splice(dragOverIdx, 0, moved); setCategories(updated);
     }
     touchDragIdx.current = null; setDragIdx(null); setDragOverIdx(null);
   };
@@ -191,16 +290,28 @@ export default function App() {
     body += `Top Spending Day:   ${["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][topWeekday]}s\nWeekend Spend:      ${fmt(weekendSpend)}\nWeekday Spend:      ${fmt(weekdaySpend)}\n`;
     body += `\n━━━━━━━━━━━━━━━━━━━━\nTOP 3 SINGLE EXPENSES\n━━━━━━━━━━━━━━━━━━━━\n`;
     top3.forEach((e, i) => { body += `${i+1}. ${e.narration} — ${fmt(e.amount)} (${cat(e.category).label}, ${e.date})\n`; });
-    const backupData = JSON.stringify({ expenses, categories, totalBudget, exportedAt: new Date().toISOString() });
-    body += `\n━━━━━━━━━━━━━━━━━━━━\nBACKUP DATA\n━━━━━━━━━━━━━━━━━━━━\n${backupData}`;
+    body += `\n━━━━━━━━━━━━━━━━━━━━\nFull backup saved to Google Drive automatically.\n━━━━━━━━━━━━━━━━━━━━`;
     return { subject: `Expense Tracker — ${monthName} Report`, body };
   };
 
-  const handleEmailReport = (month) => {
+  const handleEmailAndBackup = async (month) => {
+    // Save to Drive first
+    if (googleToken) {
+      const data = { expenses, categories, totalBudget, exportedAt: new Date().toISOString() };
+      await saveToDrive(googleToken, data);
+      showToast("Saved to Drive & opening email...");
+    }
+    // Send email
     const { subject, body } = buildEmailReport(month);
     setLastBackup(new Date().toISOString());
     window.location.href = `mailto:nishit.ssf@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    showToast("Opening mail app...");
+  };
+
+  const handleManualDriveBackup = async () => {
+    if (!googleToken) return showToast("Connect Google Drive first", false);
+    const data = { expenses, categories, totalBudget, exportedAt: new Date().toISOString() };
+    const success = await saveToDrive(googleToken, data);
+    if (success) showToast("Saved to Google Drive! ✓");
   };
 
   const handleExport = () => {
@@ -315,7 +426,7 @@ export default function App() {
 
       <div style={{ paddingBottom: 80 }}>
 
-        {/* ── ADD ── */}
+        {/* ADD */}
         {tab === "add" && (
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 28, letterSpacing: -0.5 }}>Add Expense</h1>
@@ -350,15 +461,11 @@ export default function App() {
               <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 10 }}>📅 Date</div>
               <input className="input-field" type="date" value={date} style={{ fontSize: 16 }} onChange={e => setDate(e.target.value)} />
             </div>
-            <button onClick={handleAdd} style={{
-              width: "100%", padding: "18px", borderRadius: 16, border: "none", cursor: "pointer",
-              background: amount && narration ? "#007AFF" : "#C7C7CC",
-              color: "#fff", fontSize: 17, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "background .2s"
-            }}>＋ Add Expense</button>
+            <button onClick={handleAdd} style={{ width: "100%", padding: "18px", borderRadius: 16, border: "none", cursor: "pointer", background: amount && narration ? "#007AFF" : "#C7C7CC", color: "#fff", fontSize: 17, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "background .2s" }}>＋ Add Expense</button>
           </div>
         )}
 
-        {/* ── HISTORY ── */}
+        {/* HISTORY */}
         {tab === "history" && (
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 20, letterSpacing: -0.5 }}>History</h1>
@@ -367,7 +474,6 @@ export default function App() {
               <div style={{ textAlign: "center", padding: "80px 0" }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
                 <div style={{ fontWeight: 600, fontSize: 17, color: "#8E8E93" }}>No transactions</div>
-                <div style={{ fontSize: 14, color: "#C7C7CC", marginTop: 6 }}>Expenses you add will appear here</div>
               </div>
             ) : (
               <>
@@ -380,9 +486,7 @@ export default function App() {
                         <div style={{ width: 10, height: 10, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 500, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.narration}</div>
-                          <div style={{ fontSize: 12, color: "#8E8E93", marginTop: 2 }}>
-                            {c.label} · {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                          </div>
+                          <div style={{ fontSize: 12, color: "#8E8E93", marginTop: 2 }}>{c.label} · {new Date(e.date+"T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontWeight: 600, fontSize: 16 }}>{fmt(e.amount)}</div>
@@ -401,14 +505,13 @@ export default function App() {
           </div>
         )}
 
-        {/* ── SUMMARY ── */}
+        {/* SUMMARY */}
         {tab === "summary" && (
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 20, letterSpacing: -0.5 }}>Summary</h1>
             <MonthNav value={selectedMonth} onChange={setSelectedMonth} />
             <SubToggle value={summaryTab} onChange={setSummaryTab} options={[["monthly","Monthly"],["yearly","Yearly"],["insights","Insights"]]} />
 
-            {/* MONTHLY */}
             {summaryTab === "monthly" && (
               monthExpenses.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 0" }}>
@@ -423,12 +526,7 @@ export default function App() {
                         <div style={{ fontSize: 13, color: "#8E8E93" }}>Total Spent</div>
                         <div style={{ fontSize: 26, fontWeight: 700 }}>{fmt(totalSpent)}</div>
                       </div>
-                      {budget > 0 && (
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 13, color: "#8E8E93" }}>Budget</div>
-                          <div style={{ fontSize: 26, fontWeight: 700 }}>{fmt(budget)}</div>
-                        </div>
-                      )}
+                      {budget > 0 && <div style={{ textAlign: "right" }}><div style={{ fontSize: 13, color: "#8E8E93" }}>Budget</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmt(budget)}</div></div>}
                     </div>
                     {budget > 0 && (
                       <>
@@ -440,14 +538,8 @@ export default function App() {
                         </div>
                       </>
                     )}
-                    {!budget && (
-                      <button onClick={() => { setEditBudget(totalBudget); setShowBudgetEdit(true); }}
-                        style={{ marginTop: 4, background: "none", border: "none", cursor: "pointer", color: "#007AFF", fontSize: 14, padding: 0 }}>
-                        + Set monthly budget
-                      </button>
-                    )}
+                    {!budget && <button onClick={() => { setEditBudget(totalBudget); setShowBudgetEdit(true); }} style={{ marginTop: 4, background: "none", border: "none", cursor: "pointer", color: "#007AFF", fontSize: 14, padding: 0 }}>+ Set monthly budget</button>}
                   </div>
-
                   <div className="card" style={{ padding: 16 }}>
                     <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 14 }}>By Category</div>
                     {Object.entries(catTotals).sort((a,b) => b[1]-a[1]).map(([cid, spent]) => {
@@ -468,14 +560,13 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <button onClick={() => handleEmailReport(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
-                    📧 Email Monthly Report
+                  <button onClick={() => handleEmailAndBackup(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
+                    📧 Email Report {googleToken ? "+ Save to Drive" : ""}
                   </button>
                 </div>
               )
             )}
 
-            {/* YEARLY */}
             {summaryTab === "yearly" && (
               <div className="card" style={{ padding: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 14 }}>Monthly Spending — {selectedMonth.slice(0,4)}</div>
@@ -496,7 +587,6 @@ export default function App() {
               </div>
             )}
 
-            {/* INSIGHTS */}
             {summaryTab === "insights" && (
               !insightsData ? (
                 <div style={{ textAlign: "center", padding: "60px 0" }}>
@@ -506,30 +596,11 @@ export default function App() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div className="stat-card">
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>DAILY AVERAGE</div>
-                      <div style={{ fontSize: 20, fontWeight: 700 }}>{fmtShort(insightsData.dailyAvg)}</div>
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>on active days</div>
-                    </div>
-                    <div className="stat-card">
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>ACTIVE DAYS</div>
-                      <div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.daysActive} / {insightsData.daysInMonth}</div>
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.noSpendDays} no-spend days</div>
-                    </div>
-                    <div className="stat-card">
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>LONGEST STREAK</div>
-                      <div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.maxStreak} days</div>
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>consecutive spending</div>
-                    </div>
-                    <div className="stat-card">
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>VS LAST MONTH</div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: insightsData.prevSpent === 0 ? "#1C1C1E" : totalSpent > insightsData.prevSpent ? "#FF3B30" : "#34C759" }}>
-                        {insightsData.prevSpent === 0 ? "—" : `${totalSpent > insightsData.prevSpent ? "+" : ""}${((totalSpent-insightsData.prevSpent)/insightsData.prevSpent*100).toFixed(0)}%`}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.prevSpent > 0 ? fmtShort(insightsData.prevSpent)+" last month" : "no prev data"}</div>
-                    </div>
+                    <div className="stat-card"><div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>DAILY AVERAGE</div><div style={{ fontSize: 20, fontWeight: 700 }}>{fmtShort(insightsData.dailyAvg)}</div><div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>on active days</div></div>
+                    <div className="stat-card"><div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>ACTIVE DAYS</div><div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.daysActive} / {insightsData.daysInMonth}</div><div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.noSpendDays} no-spend days</div></div>
+                    <div className="stat-card"><div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>LONGEST STREAK</div><div style={{ fontSize: 20, fontWeight: 700 }}>{insightsData.maxStreak} days</div><div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>consecutive spending</div></div>
+                    <div className="stat-card"><div style={{ fontSize: 11, color: "#8E8E93", marginBottom: 4 }}>VS LAST MONTH</div><div style={{ fontSize: 20, fontWeight: 700, color: insightsData.prevSpent === 0 ? "#1C1C1E" : totalSpent > insightsData.prevSpent ? "#FF3B30" : "#34C759" }}>{insightsData.prevSpent === 0 ? "—" : `${totalSpent > insightsData.prevSpent ? "+" : ""}${((totalSpent-insightsData.prevSpent)/insightsData.prevSpent*100).toFixed(0)}%`}</div><div style={{ fontSize: 11, color: "#8E8E93", marginTop: 2 }}>{insightsData.prevSpent > 0 ? fmtShort(insightsData.prevSpent)+" last month" : "no prev data"}</div></div>
                   </div>
-
                   {insightsData.highestDay && (
                     <div className="card" style={{ padding: 16 }}>
                       <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 8 }}>HIGHEST SPEND DAY</div>
@@ -539,56 +610,35 @@ export default function App() {
                       </div>
                     </div>
                   )}
-
                   <div className="card" style={{ padding: 16 }}>
                     <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING BY DAY OF WEEK</div>
                     {DAYS.map((d, i) => {
-                      const amt = insightsData.weekdayTotals[i];
-                      const maxDay = Math.max(...insightsData.weekdayTotals, 1);
-                      const isTop = i === insightsData.topWeekday && amt > 0;
+                      const amt = insightsData.weekdayTotals[i]; const maxDay = Math.max(...insightsData.weekdayTotals, 1); const isTop = i === insightsData.topWeekday && amt > 0;
                       return (
                         <div key={d} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                           <span style={{ fontSize: 12, color: isTop ? "#007AFF" : "#8E8E93", width: 28, fontWeight: isTop ? 600 : 400 }}>{d}</span>
                           <div style={{ flex: 1, height: 6, background: "#F2F2F7", borderRadius: 99, overflow: "hidden" }}>
                             <div style={{ height: "100%", width: `${(amt/maxDay)*100}%`, background: isTop ? "#007AFF" : "#C7C7CC", borderRadius: 99 }} />
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? "#007AFF" : amt ? "#1C1C1E" : "#C7C7CC", width: 66, textAlign: "right" }}>
-                            {amt ? fmtShort(amt) : "—"}
-                          </span>
+                          <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? "#007AFF" : amt ? "#1C1C1E" : "#C7C7CC", width: 66, textAlign: "right" }}>{amt ? fmtShort(amt) : "—"}</span>
                         </div>
                       );
                     })}
                     <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid #F2F2F7" }}>
-                      <div style={{ flex: 1, textAlign: "center" }}>
-                        <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKDAYS</div>
-                        <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekdaySpend)}</div>
-                      </div>
+                      <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKDAYS</div><div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekdaySpend)}</div></div>
                       <div style={{ width: 1, background: "#F2F2F7" }} />
-                      <div style={{ flex: 1, textAlign: "center" }}>
-                        <div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKENDS</div>
-                        <div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekendSpend)}</div>
-                      </div>
+                      <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 11, color: "#8E8E93" }}>WEEKENDS</div><div style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{fmtShort(insightsData.weekendSpend)}</div></div>
                     </div>
                   </div>
-
                   <div className="card" style={{ padding: 16 }}>
                     <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>SPENDING TREND</div>
                     <div style={{ display: "flex", gap: 10 }}>
-                      <div style={{ flex: 1, textAlign: "center" }}>
-                        <div style={{ fontSize: 11, color: "#8E8E93" }}>1ST HALF</div>
-                        <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4 }}>{fmtShort(insightsData.firstHalf)}</div>
-                      </div>
+                      <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 11, color: "#8E8E93" }}>1ST HALF</div><div style={{ fontWeight: 700, fontSize: 18, marginTop: 4 }}>{fmtShort(insightsData.firstHalf)}</div></div>
                       <div style={{ display: "flex", alignItems: "center", fontSize: 20 }}>{insightsData.secondHalf > insightsData.firstHalf ? "📈" : "📉"}</div>
-                      <div style={{ flex: 1, textAlign: "center" }}>
-                        <div style={{ fontSize: 11, color: "#8E8E93" }}>2ND HALF</div>
-                        <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4, color: insightsData.secondHalf > insightsData.firstHalf ? "#FF3B30" : "#34C759" }}>{fmtShort(insightsData.secondHalf)}</div>
-                      </div>
+                      <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: 11, color: "#8E8E93" }}>2ND HALF</div><div style={{ fontWeight: 700, fontSize: 18, marginTop: 4, color: insightsData.secondHalf > insightsData.firstHalf ? "#FF3B30" : "#34C759" }}>{fmtShort(insightsData.secondHalf)}</div></div>
                     </div>
-                    <div style={{ fontSize: 12, color: "#8E8E93", textAlign: "center", marginTop: 10 }}>
-                      {insightsData.secondHalf > insightsData.firstHalf ? "You spend more in the second half of the month" : "You spend more in the first half of the month"}
-                    </div>
+                    <div style={{ fontSize: 12, color: "#8E8E93", textAlign: "center", marginTop: 10 }}>{insightsData.secondHalf > insightsData.firstHalf ? "You spend more in the second half of the month" : "You spend more in the first half of the month"}</div>
                   </div>
-
                   <div className="card" style={{ padding: 16 }}>
                     <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 12 }}>TOP 3 SINGLE EXPENSES</div>
                     {insightsData.top3.map((e, i) => {
@@ -605,9 +655,8 @@ export default function App() {
                       );
                     })}
                   </div>
-
-                  <button onClick={() => handleEmailReport(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
-                    📧 Email Full Report
+                  <button onClick={() => handleEmailAndBackup(selectedMonth)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", background: "#007AFF", color: "#fff", fontSize: 15, fontWeight: 600 }}>
+                    📧 Email Full Report {googleToken ? "+ Save to Drive" : ""}
                   </button>
                 </div>
               )
@@ -615,23 +664,52 @@ export default function App() {
           </div>
         )}
 
-        {/* ── SETTINGS ── */}
+        {/* SETTINGS */}
         {tab === "settings" && (
           <div style={{ padding: "20px" }}>
             <h1 style={{ fontSize: 34, fontWeight: 700, marginBottom: 24, letterSpacing: -0.5 }}>Settings</h1>
 
+            {/* Google Drive */}
+            <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Google Drive Backup</div>
+            <div className="card" style={{ marginBottom: 24 }}>
+              {googleUser ? (
+                <div style={{ padding: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                    {googleUser.picture && <img src={googleUser.picture} style={{ width: 36, height: 36, borderRadius: "50%" }} alt="" />}
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 15 }}>{googleUser.name}</div>
+                      <div style={{ fontSize: 12, color: "#8E8E93" }}>{googleUser.email}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={handleManualDriveBackup} style={{ flex: 1, padding: "11px", borderRadius: 10, border: "none", cursor: "pointer", background: driveStatus === "saving" ? "#E5E5EA" : "#34C759", color: "#fff", fontSize: 14, fontWeight: 600 }}>
+                      {driveStatus === "saving" ? "Saving..." : driveStatus === "saved" ? "✓ Saved!" : "💾 Backup Now"}
+                    </button>
+                    <button onClick={handleGoogleLogout} style={{ padding: "11px 16px", borderRadius: 10, border: "none", cursor: "pointer", background: "#FFE5E5", color: "#FF3B30", fontSize: 14, fontWeight: 600 }}>
+                      Sign Out
+                    </button>
+                  </div>
+                  {lastBackup && <div style={{ fontSize: 11, color: "#8E8E93", marginTop: 10, textAlign: "center" }}>Last backup: {new Date(lastBackup).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
+                </div>
+              ) : (
+                <button onClick={handleGoogleLogin} style={{ width: "100%", padding: "16px", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: "#1C1C1E" }}>Connect Google Drive</span>
+                </button>
+              )}
+            </div>
+
+            {/* Budget */}
             <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Budget</div>
             <div className="card" style={{ marginBottom: 24 }}>
               <div style={{ display: "flex", alignItems: "center", padding: "16px", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: 16 }}>Monthly Budget</div>
-                  <div style={{ fontSize: 14, color: "#8E8E93", marginTop: 2 }}>{totalBudget ? fmt(parseFloat(totalBudget)) : "Not set"}</div>
-                </div>
+                <div><div style={{ fontWeight: 500, fontSize: 16 }}>Monthly Budget</div><div style={{ fontSize: 14, color: "#8E8E93", marginTop: 2 }}>{totalBudget ? fmt(parseFloat(totalBudget)) : "Not set"}</div></div>
                 <button onClick={() => { setEditBudget(totalBudget); setShowBudgetEdit(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#007AFF", fontSize: 15, fontWeight: 500 }}>Edit</button>
               </div>
             </div>
 
-            <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Data Backup</div>
+            {/* Data Backup */}
+            <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Local Backup</div>
             <div className="card" style={{ marginBottom: 24 }}>
               <div style={{ display: "flex" }}>
                 <button onClick={handleExport} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", borderRight: "1px solid #F2F2F7", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -639,31 +717,22 @@ export default function App() {
                   <span style={{ fontSize: 14, fontWeight: 600, color: "#007AFF" }}>Export</span>
                   <span style={{ fontSize: 11, color: "#8E8E93" }}>Save file</span>
                 </button>
-                <button onClick={() => importRef.current.click()} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", borderRight: "1px solid #F2F2F7", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <button onClick={() => importRef.current.click()} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 24 }}>📥</span>
                   <span style={{ fontSize: 14, fontWeight: 600, color: "#007AFF" }}>Import</span>
                   <span style={{ fontSize: 11, color: "#8E8E93" }}>Restore</span>
                 </button>
-                <button onClick={() => handleEmailReport(currentMonth())} style={{ flex: 1, padding: "16px", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 24 }}>📧</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#007AFF" }}>Email</span>
-                  <span style={{ fontSize: 11, color: "#8E8E93" }}>Send report</span>
-                </button>
                 <input ref={importRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleImport} />
               </div>
-              {lastBackup && <div style={{ fontSize: 11, color: "#8E8E93", textAlign: "center", padding: "8px 0 12px" }}>Last backup: {new Date(lastBackup).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>}
             </div>
 
+            {/* Categories */}
             <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6, paddingLeft: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Categories — hold ☰ to drag</div>
             <div className="card" style={{ marginBottom: 12 }}>
               {categories.map((c, i) => (
                 <div key={c.id} data-cat-idx={i}
                   className={`drag-row${dragOverIdx === i ? " over" : ""}`}
-                  draggable
-                  onDragStart={() => handleDragStart(i)}
-                  onDragOver={e => handleDragOver(e, i)}
-                  onDrop={() => handleDrop(i)}
-                  onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                  draggable onDragStart={() => handleDragStart(i)} onDragOver={e => handleDragOver(e, i)} onDrop={() => handleDrop(i)} onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                   style={{ display: "flex", alignItems: "center", padding: "12px 16px", gap: 10, borderBottom: i < categories.length-1 ? "1px solid #F2F2F7" : "none", opacity: dragIdx === i ? 0.4 : 1, touchAction: "none" }}>
                   <span style={{ fontSize: 18, color: "#C7C7CC", cursor: "grab", padding: "4px", userSelect: "none" }}
                     onTouchStart={e => handleTouchStart(e, i)} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>☰</span>
@@ -673,9 +742,7 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <button onClick={() => setShowNewCat(true)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "1.5px dashed #C7C7CC", background: "none", cursor: "pointer", color: "#007AFF", fontSize: 15, fontWeight: 600 }}>
-              + Add New Category
-            </button>
+            <button onClick={() => setShowNewCat(true)} style={{ width: "100%", padding: "14px", borderRadius: 12, border: "1.5px dashed #C7C7CC", background: "none", cursor: "pointer", color: "#007AFF", fontSize: 15, fontWeight: 600 }}>+ Add New Category</button>
           </div>
         )}
       </div>
@@ -684,9 +751,7 @@ export default function App() {
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "rgba(255,255,255,.92)", borderTop: "1px solid #E5E5EA", backdropFilter: "blur(20px)", display: "flex", paddingBottom: 16, zIndex: 50 }}>
         {TABS.map(t => (
           <button key={t.id} className="nav-btn" onClick={() => setTab(t.id)}>
-            <div style={{ fontSize: t.id === "add" ? 18 : 17, width: 28, height: 28, borderRadius: t.id === "add" ? "50%" : 6, background: t.id === "add" ? (tab === "add" ? "#007AFF" : "#C7C7CC") : "none", display: "flex", alignItems: "center", justifyContent: "center", color: t.id === "add" ? "#fff" : (tab === t.id ? "#007AFF" : "#8E8E93") }}>
-              {t.icon}
-            </div>
+            <div style={{ fontSize: t.id === "add" ? 18 : 17, width: 28, height: 28, borderRadius: t.id === "add" ? "50%" : 6, background: t.id === "add" ? (tab === "add" ? "#007AFF" : "#C7C7CC") : "none", display: "flex", alignItems: "center", justifyContent: "center", color: t.id === "add" ? "#fff" : (tab === t.id ? "#007AFF" : "#8E8E93") }}>{t.icon}</div>
             <span style={{ fontSize: 11, color: tab === t.id ? "#007AFF" : "#8E8E93", fontWeight: tab === t.id ? 600 : 400 }}>{t.label}</span>
           </button>
         ))}
@@ -700,10 +765,13 @@ export default function App() {
             <div style={{ textAlign: "center", marginBottom: 20 }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>🔔</div>
               <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Time to Back Up!</div>
-              <div style={{ color: "#8E8E93", fontSize: 15 }}>It's been over 30 days since your last backup. Send your report to email to keep your data safe.</div>
+              <div style={{ color: "#8E8E93", fontSize: 15 }}>It's been over 30 days since your last backup.</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <button className="pill-btn" style={{ width: "100%", background: "#007AFF", color: "#fff" }} onClick={() => { handleEmailReport(currentMonth()); setShowBackupReminder(false); }}>📧 Email Report & Backup</button>
+              <button className="pill-btn" style={{ width: "100%", background: "#007AFF", color: "#fff" }} onClick={() => { handleEmailAndBackup(currentMonth()); setShowBackupReminder(false); }}>
+                📧 Email Report {googleToken ? "+ Save to Drive" : ""}
+              </button>
+              {googleToken && <button className="pill-btn" style={{ width: "100%", background: "#34C759", color: "#fff" }} onClick={() => { handleManualDriveBackup(); setShowBackupReminder(false); }}>💾 Save to Drive only</button>}
               <button className="pill-btn" style={{ width: "100%", background: "#F2F2F7", color: "#1C1C1E" }} onClick={() => setShowBackupReminder(false)}>Remind me later</button>
             </div>
           </div>
@@ -753,11 +821,7 @@ export default function App() {
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 10 }}>COLOR</div>
-                <div className="color-row">
-                  {COLOR_OPTIONS.map(col => (
-                    <button key={col} onClick={() => setNewCatColor(col)} style={{ width: 32, height: 32, borderRadius: "50%", background: col, border: "none", cursor: "pointer", outline: newCatColor === col ? `3px solid ${col}` : "none", outlineOffset: 2, flexShrink: 0 }} />
-                  ))}
-                </div>
+                <div className="color-row">{COLOR_OPTIONS.map(col => (<button key={col} onClick={() => setNewCatColor(col)} style={{ width: 32, height: 32, borderRadius: "50%", background: col, border: "none", cursor: "pointer", outline: newCatColor === col ? `3px solid ${col}` : "none", outlineOffset: 2, flexShrink: 0 }} />))}</div>
               </div>
               <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
                 <button className="pill-btn" style={{ flex: 1, background: "#F2F2F7", color: "#1C1C1E" }} onClick={() => setShowNewCat(false)}>Cancel</button>
@@ -776,8 +840,7 @@ export default function App() {
             <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Monthly Budget</div>
             <div style={{ position: "relative", marginBottom: 24 }}>
               <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", fontSize: 18, color: "#8E8E93" }}>₹</span>
-              <input className="ios-input" style={{ paddingLeft: 36, fontSize: 22, fontWeight: 600 }}
-                type="number" min="0" placeholder="0" value={editBudget} onChange={e => setEditBudget(e.target.value)} autoFocus />
+              <input className="ios-input" style={{ paddingLeft: 36, fontSize: 22, fontWeight: 600 }} type="number" min="0" placeholder="0" value={editBudget} onChange={e => setEditBudget(e.target.value)} autoFocus />
             </div>
             <div style={{ display: "flex", gap: 12 }}>
               <button className="pill-btn" style={{ flex: 1, background: "#F2F2F7", color: "#1C1C1E" }} onClick={() => setShowBudgetEdit(false)}>Cancel</button>
@@ -798,8 +861,7 @@ export default function App() {
                 <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 6 }}>AMOUNT</div>
                 <div style={{ position: "relative" }}>
                   <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", fontSize: 18, color: "#8E8E93" }}>₹</span>
-                  <input className="ios-input" style={{ paddingLeft: 36, fontSize: 20, fontWeight: 600 }}
-                    type="number" min="0" value={editExpense.amount} onChange={e => setEditExpense(p => ({ ...p, amount: e.target.value }))} />
+                  <input className="ios-input" style={{ paddingLeft: 36, fontSize: 20, fontWeight: 600 }} type="number" min="0" value={editExpense.amount} onChange={e => setEditExpense(p => ({ ...p, amount: e.target.value }))} />
                 </div>
               </div>
               <div>
@@ -810,11 +872,8 @@ export default function App() {
                 <div style={{ fontSize: 13, color: "#8E8E93", marginBottom: 8 }}>CATEGORY</div>
                 <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
                   {categories.map(c => (
-                    <button key={c.id} className="cat-chip"
-                      style={{ background: editExpense.category === c.id ? c.color : "#fff", color: editExpense.category === c.id ? "#fff" : "#3C3C43", flexShrink: 0 }}
-                      onClick={() => setEditExpense(p => ({ ...p, category: c.id }))}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: editExpense.category === c.id ? "rgba(255,255,255,0.6)" : c.color, flexShrink: 0 }} />
-                      {c.label}
+                    <button key={c.id} className="cat-chip" style={{ background: editExpense.category === c.id ? c.color : "#fff", color: editExpense.category === c.id ? "#fff" : "#3C3C43", flexShrink: 0 }} onClick={() => setEditExpense(p => ({ ...p, category: c.id }))}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: editExpense.category === c.id ? "rgba(255,255,255,0.6)" : c.color, flexShrink: 0 }} />{c.label}
                     </button>
                   ))}
                 </div>
