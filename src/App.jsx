@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 const GOOGLE_CLIENT_ID = "82756044682-ovvcfig11hhc3v1grbb2vgsus4k9k90o.apps.googleusercontent.com";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_FILE_NAME = "expense-tracker-data.json";
+const TOKEN_REFRESH_INTERVAL = 45 * 60 * 1000; // refresh every 45 min (token lasts 60)
 
 function useLocalStorage(key, defaultValue) {
   const [value, setValue] = useState(() => {
@@ -296,6 +297,7 @@ export default function App() {
   const touchDragIdx = useRef(null);
   const tokenClientRef = useRef(null);
   const syncTimeoutRef = useRef(null);
+  const tokenRefreshIntervalRef = useRef(null);
 
   // Online/offline
   useEffect(() => {
@@ -318,6 +320,18 @@ export default function App() {
   // On token load, pull from Drive
   useEffect(() => { if (googleToken && isOnline) loadFromDrive(googleToken); }, [googleToken]);
 
+  // Silent token refresh — runs every 45 min to prevent logout
+  useEffect(() => {
+    if (!googleToken) { clearInterval(tokenRefreshIntervalRef.current); return; }
+    const doSilentRefresh = () => {
+      if (!tokenClientRef.current) return;
+      // prompt: none means it refreshes silently without showing a popup
+      tokenClientRef.current.requestAccessToken({ prompt: "" });
+    };
+    tokenRefreshIntervalRef.current = setInterval(doSilentRefresh, TOKEN_REFRESH_INTERVAL);
+    return () => clearInterval(tokenRefreshIntervalRef.current);
+  }, [googleToken]);
+
   // Check recurring expenses on load
   useEffect(() => { if (setupDone) processRecurringExpenses(); }, [setupDone]);
 
@@ -329,7 +343,8 @@ export default function App() {
       callback: async (response) => {
         if (response.access_token) {
           setGoogleToken(response.access_token);
-          await fetchGoogleUser(response.access_token);
+          // Only fetch user info on first login (not silent refresh)
+          if (!googleUser) await fetchGoogleUser(response.access_token);
           await loadFromDrive(response.access_token);
         }
       },
