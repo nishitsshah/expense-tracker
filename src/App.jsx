@@ -271,6 +271,8 @@ export default function App() {
   const [editExpense, setEditExpense] = useState(null);
   const [showNewCat, setShowNewCat] = useState(false);
   const [showNewPay, setShowNewPay] = useState(false);
+  const [editCat, setEditCat] = useState(null);
+  const [editPay, setEditPay] = useState(null);
   const [newItemLabel, setNewItemLabel] = useState("");
   const [newItemColor, setNewItemColor] = useState("#007AFF");
   const [showBudgetEdit, setShowBudgetEdit] = useState(false);
@@ -987,6 +989,7 @@ export default function App() {
                         <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none" }} onTouchStart={e => handleTouchStart(e,i,"cat")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("cat")}>☰</span>
                         <div style={{ width:14, height:14, borderRadius:"50%", background:c.color, flexShrink:0 }} />
                         <span style={{ flex:1, fontWeight:500, fontSize:15 }}>{c.label}</span>
+                        <button onClick={() => { setEditCat(c); setNewItemLabel(c.label); setNewItemColor(c.color); }} style={{ background:"#E8F0FE", border:"none", cursor:"pointer", color:"#007AFF", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8, marginRight:6 }}>Edit</button>
                         <button onClick={() => setDeleteConfirmCat(c)} style={{ background:"#FFE5E5", border:"none", cursor:"pointer", color:"#FF3B30", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8 }}>Delete</button>
                       </div>
                     ))}
@@ -1005,6 +1008,7 @@ export default function App() {
                         <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none" }} onTouchStart={e => handleTouchStart(e,i,"pay")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("pay")}>☰</span>
                         <div style={{ width:14, height:14, borderRadius:"50%", background:p.color, flexShrink:0 }} />
                         <span style={{ flex:1, fontWeight:500, fontSize:15 }}>{p.label}</span>
+                        <button onClick={() => { setEditPay(p); setNewItemLabel(p.label); setNewItemColor(p.color); }} style={{ background:"#E8F0FE", border:"none", cursor:"pointer", color:"#007AFF", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8, marginRight:6 }}>Edit</button>
                         <button onClick={() => setDeleteConfirmPay(p)} style={{ background:"#FFE5E5", border:"none", cursor:"pointer", color:"#FF3B30", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8 }}>Delete</button>
                       </div>
                     ))}
@@ -1230,6 +1234,12 @@ export default function App() {
 
       {/* Budget Edit */}
       {showBudgetEdit && (<div className="modal-bg" onClick={() => setShowBudgetEdit(false)}><div className="modal-sheet" onClick={e => e.stopPropagation()}><div className="sheet-handle" /><div style={{ fontWeight:700, fontSize:20, marginBottom:20 }}>Monthly Budget</div><div style={{ position:"relative", marginBottom:24 }}><span style={{ position:"absolute", left:16, top:"50%", transform:"translateY(-50%)", fontSize:18, color:"#8E8E93" }}>₹</span><input className="ios-input" style={{ paddingLeft:36, fontSize:22, fontWeight:600 }} type="number" min="0" placeholder="0" value={editBudget} onChange={e => setEditBudget(e.target.value)} autoFocus /></div><div style={{ display:"flex", gap:12 }}><button className="pill-btn" style={{ flex:1, background:"#F2F2F7", color:"#1C1C1E" }} onClick={() => setShowBudgetEdit(false)}>Cancel</button><button className="pill-btn" style={{ flex:1, background:"#007AFF", color:"#fff" }} onClick={() => { setTotalBudget(editBudget); setShowBudgetEdit(false); showToast("Budget saved!"); triggerDriveSync({totalBudget:editBudget}); }}>Save</button></div></div></div>)}
+
+      {/* Edit Category */}
+      {editCat && (<div className="modal-bg" onClick={() => setEditCat(null)}><div className="modal-sheet" onClick={e => e.stopPropagation()}><div className="sheet-handle" /><div style={{ fontWeight:700, fontSize:20, marginBottom:20 }}>Edit Category</div><div style={{ display:"flex", flexDirection:"column", gap:16 }}><input className="ios-input" placeholder="Category name" value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)} autoFocus /><div><div style={{ fontSize:13, color:"#8E8E93", marginBottom:10 }}>COLOR</div><div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>{COLOR_OPTIONS.map(col => (<button key={col} onClick={() => setNewItemColor(col)} style={{ width:32, height:32, borderRadius:"50%", background:col, border:"none", cursor:"pointer", outline:newItemColor===col?`3px solid ${col}`:"none", outlineOffset:2 }} />))}</div></div><div style={{ display:"flex", gap:12, marginTop:4 }}><button className="pill-btn" style={{ flex:1, background:"#F2F2F7", color:"#1C1C1E" }} onClick={() => setEditCat(null)}>Cancel</button><button className="pill-btn" style={{ flex:1, background:"#007AFF", color:"#fff" }} onClick={() => { if (!newItemLabel.trim()) return showToast("Enter a name", false); const n = categories.map(c => c.id===editCat.id ? {...c, label:newItemLabel.trim(), color:newItemColor} : c); setCategories(n); setEditCat(null); showToast("Category updated!"); triggerDriveSync({categories:n}); }}>Save</button></div></div></div></div>)}
+
+      {/* Edit Payment Source */}
+      {editPay && (<div className="modal-bg" onClick={() => setEditPay(null)}><div className="modal-sheet" onClick={e => e.stopPropagation()}><div className="sheet-handle" /><div style={{ fontWeight:700, fontSize:20, marginBottom:20 }}>Edit Payment Source</div><div style={{ display:"flex", flexDirection:"column", gap:16 }}><input className="ios-input" placeholder="Payment source name" value={newItemLabel} onChange={e => setNewItemLabel(e.target.value)} autoFocus /><div><div style={{ fontSize:13, color:"#8E8E93", marginBottom:10 }}>COLOR</div><div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>{COLOR_OPTIONS.map(col => (<button key={col} onClick={() => setNewItemColor(col)} style={{ width:32, height:32, borderRadius:"50%", background:col, border:"none", cursor:"pointer", outline:newItemColor===col?`3px solid ${col}`:"none", outlineOffset:2 }} />))}</div></div><div style={{ display:"flex", gap:12, marginTop:4 }}><button className="pill-btn" style={{ flex:1, background:"#F2F2F7", color:"#1C1C1E" }} onClick={() => setEditPay(null)}>Cancel</button><button className="pill-btn" style={{ flex:1, background:"#007AFF", color:"#fff" }} onClick={() => { if (!newItemLabel.trim()) return showToast("Enter a name", false); const n = paymentSources.map(p => p.id===editPay.id ? {...p, label:newItemLabel.trim(), color:newItemColor} : p); setPaymentSources(n); setEditPay(null); showToast("Payment source updated!"); triggerDriveSync({paymentSources:n}); }}>Save</button></div></div></div></div>)}
 
       {/* Toast */}
       {toast && (<div style={{ position:"fixed", bottom:100, left:"50%", transform:"translateX(-50%)", background:toast.ok?"rgba(52,199,89,.95)":"rgba(255,59,48,.95)", color:"#fff", padding:"12px 22px", borderRadius:12, fontSize:14, fontWeight:600, boxShadow:"0 4px 20px rgba(0,0,0,.15)", zIndex:999, whiteSpace:"nowrap" }}>{toast.msg}</div>)}
