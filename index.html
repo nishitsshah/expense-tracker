@@ -1,33 +1,337 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Expense Tracker</title>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Expense Tracker — Track smarter, spend better</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#007AFF" />
-    <meta name="mobile-web-app-capable" content="yes" />
+  :root {
+    --blue: #007AFF;
+    --blue-dark: #0062CC;
+    --black: #0A0A0A;
+    --gray: #6B7280;
+    --light: #F5F7FA;
+    --white: #FFFFFF;
+    --border: #E5E7EB;
+  }
 
-    <!-- iOS specific -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Expenses" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(() => console.log('SW registered'))
-            .catch((e) => console.log('SW error', e));
-        });
-      }
-    </script>
-  </body>
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--white);
+    color: var(--black);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 40px;
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; font-size: 17px; color: var(--black); text-decoration: none;
+  }
+
+  .nav-logo-icon {
+    width: 32px; height: 32px; border-radius: 8px; background: var(--blue);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+
+  .nav-cta {
+    background: var(--blue); color: #fff; border: none; cursor: pointer;
+    padding: 10px 22px; border-radius: 99px; font-size: 14px; font-weight: 600;
+    text-decoration: none; transition: background .2s;
+  }
+  .nav-cta:hover { background: var(--blue-dark); }
+
+  /* HERO */
+  .hero {
+    padding: 140px 40px 100px;
+    max-width: 900px; margin: 0 auto; text-align: center;
+  }
+
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #EFF6FF; color: var(--blue);
+    padding: 6px 14px; border-radius: 99px;
+    font-size: 13px; font-weight: 500; margin-bottom: 28px;
+  }
+
+  .hero-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(40px, 7vw, 72px);
+    line-height: 1.1; letter-spacing: -1px;
+    margin-bottom: 24px; color: var(--black);
+  }
+
+  h1 em { font-style: italic; color: var(--blue); }
+
+  .hero-sub {
+    font-size: clamp(16px, 2vw, 20px); color: var(--gray);
+    line-height: 1.6; max-width: 540px; margin: 0 auto 40px;
+  }
+
+  .hero-cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--blue); color: #fff; border: none; cursor: pointer;
+    padding: 16px 32px; border-radius: 99px; font-size: 16px; font-weight: 600;
+    text-decoration: none; transition: all .2s; box-shadow: 0 4px 20px rgba(0,122,255,.3);
+  }
+  .hero-cta:hover { background: var(--blue-dark); transform: translateY(-1px); box-shadow: 0 8px 28px rgba(0,122,255,.35); }
+
+  .hero-note { font-size: 13px; color: #9CA3AF; margin-top: 14px; }
+
+  /* FEATURES */
+  .features {
+    background: var(--light);
+    padding: 100px 40px;
+  }
+
+  .features-inner { max-width: 1000px; margin: 0 auto; }
+
+  .section-label {
+    text-align: center; font-size: 13px; font-weight: 600;
+    color: var(--blue); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px;
+  }
+
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(28px, 4vw, 42px); text-align: center;
+    margin-bottom: 56px; line-height: 1.2;
+  }
+
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;
+  }
+
+  .feature-card {
+    background: var(--white); border-radius: 20px; padding: 28px;
+    border: 1px solid var(--border);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,.08); }
+
+  .feature-icon {
+    width: 44px; height: 44px; border-radius: 12px; background: #EFF6FF;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-bottom: 16px;
+  }
+
+  .feature-title { font-weight: 600; font-size: 16px; margin-bottom: 8px; }
+  .feature-body { font-size: 14px; color: var(--gray); line-height: 1.6; }
+
+  /* HOW IT WORKS */
+  .how {
+    padding: 100px 40px;
+    max-width: 800px; margin: 0 auto; text-align: center;
+  }
+
+  .steps { display: flex; flex-direction: column; gap: 0; margin-top: 48px; text-align: left; }
+
+  .step {
+    display: flex; gap: 24px; align-items: flex-start;
+    padding: 28px 0; border-bottom: 1px solid var(--border);
+  }
+  .step:last-child { border-bottom: none; }
+
+  .step-num {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--blue);
+    color: #fff; font-weight: 600; font-size: 15px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+
+  .step-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; }
+  .step-body { font-size: 14px; color: var(--gray); line-height: 1.6; }
+
+  /* CTA SECTION */
+  .cta-section {
+    background: var(--black); color: #fff;
+    padding: 100px 40px; text-align: center;
+  }
+
+  .cta-section h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(28px, 4vw, 48px); margin-bottom: 16px; line-height: 1.2;
+  }
+
+  .cta-section p { font-size: 16px; color: #9CA3AF; margin-bottom: 36px; }
+
+  .cta-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--blue); color: #fff; border: none; cursor: pointer;
+    padding: 16px 32px; border-radius: 99px; font-size: 16px; font-weight: 600;
+    text-decoration: none; transition: all .2s;
+  }
+  .cta-btn:hover { background: var(--blue-dark); }
+
+  /* FOOTER */
+  footer {
+    padding: 32px 40px; border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; color: var(--gray); flex-wrap: wrap; gap: 12px;
+  }
+
+  footer a { color: var(--gray); text-decoration: none; }
+  footer a:hover { color: var(--blue); }
+
+  /* GOOGLE SIGN IN BUTTON */
+  .google-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #fff; color: var(--black);
+    border: 1.5px solid var(--border); cursor: pointer;
+    padding: 14px 28px; border-radius: 99px; font-size: 15px; font-weight: 500;
+    text-decoration: none; transition: all .2s; margin-top: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  }
+  .google-btn:hover { border-color: #9CA3AF; box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+
+  @media (max-width: 600px) {
+    nav { padding: 14px 20px; }
+    .hero { padding: 120px 24px 80px; }
+    .features { padding: 80px 24px; }
+    .how { padding: 80px 24px; }
+    .cta-section { padding: 80px 24px; }
+    footer { padding: 24px 20px; flex-direction: column; text-align: center; }
+  }
+
+  /* FADE IN */
+  @keyframes fadeUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+  .fade-up { animation: fadeUp .6s ease forwards; }
+  .fade-up-2 { animation: fadeUp .6s .15s ease both; }
+  .fade-up-3 { animation: fadeUp .6s .3s ease both; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">
+    <div class="nav-logo-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <path d="M5 4h10v2.5H8.5v2.5H14v2.5H8.5V16H5V4z" fill="white"/>
+        <path d="M5 11h8" stroke="white" stroke-width="0" fill="white" d="M5 11h7v2H5z"/>
+      </svg>
+    </div>
+    Expense Tracker
+  </a>
+  <a href="/app" class="nav-cta">Sign in free →</a>
+</nav>
+
+<section class="hero">
+  <div class="hero-badge fade-up"><div class="hero-badge-dot"></div>Free · No ads · Your data stays yours</div>
+  <h1 class="fade-up-2">Track every rupee.<br><em>Effortlessly.</em></h1>
+  <p class="hero-sub fade-up-3">A clean, fast expense tracker that syncs across all your devices. Set budgets, get insights, and export to CSV for your accountant.</p>
+  <div class="fade-up-3">
+    <a href="/app" class="hero-cta">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Continue with Google
+    </a>
+    <p class="hero-note">Sign in with your Google account · Data saved to your Drive</p>
+  </div>
+</section>
+
+<section class="features">
+  <div class="features-inner">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Everything you need</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">Monthly insights</div>
+        <div class="feature-body">Daily average, spending streaks, weekday vs weekend breakdown, and month-on-month trends.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎯</div>
+        <div class="feature-title">Budget alerts</div>
+        <div class="feature-body">Get warned at 80% and 100% of your monthly budget so you never overspend without knowing.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔁</div>
+        <div class="feature-title">Recurring expenses</div>
+        <div class="feature-body">Set up subscriptions and regular bills. Get reminded before they expire so you never waste money.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💳</div>
+        <div class="feature-title">Payment sources</div>
+        <div class="feature-body">Track spending across your credit cards, UPI accounts and cash — all in one place.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☁️</div>
+        <div class="feature-title">Syncs everywhere</div>
+        <div class="feature-body">Add on your phone, check on your laptop. Data lives in your own Google Drive — not our servers.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📁</div>
+        <div class="feature-title">CSV export</div>
+        <div class="feature-body">Export by month, financial year, or custom date range. Send straight to your accountant.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how">
+  <div class="section-label">How it works</div>
+  <h2 class="section-title">Up and running in 60 seconds</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Sign in with Google</div>
+        <div class="step-body">No new account or password needed. Just your existing Google account.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Set up your categories</div>
+        <div class="step-body">Pick from defaults or create your own. Add your credit cards and payment methods.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Start logging expenses</div>
+        <div class="step-body">Takes 5 seconds per expense. Amount, narration, category — done.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Get insights at end of month</div>
+        <div class="step-body">See where your money went, email yourself a full report, or export to CSV.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section">
+  <h2>Start tracking today.<br>It's completely free.</h2>
+  <p>No subscription. No ads. Your data stays in your Google Drive.</p>
+  <a href="/app" class="cta-btn">
+    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+    Get started free
+  </a>
+</section>
+
+<footer>
+  <span>© 2026 Expense Tracker</span>
+  <div style="display:flex;gap:24px;">
+    <a href="/privacy.html">Privacy Policy</a>
+    <a href="/app">Sign In</a>
+  </div>
+</footer>
+
+</body>
 </html>
-
