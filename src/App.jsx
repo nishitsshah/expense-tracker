@@ -722,11 +722,13 @@ export default function App() {
   const fontScale = fontSize === "small" ? 0.88 : fontSize === "large" ? 1.15 : 1;
 
   return (
-    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative", fontSize: `${fontScale}rem` }}>
+    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative", "--fs": fontScale }}>
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0}
         button,input,select{font-family:inherit}
         ::-webkit-scrollbar{display:none}
+        #root > div { font-size: calc(16px * var(--fs, 1)); }
+        #root > div * { font-size: inherit; }
         .cat-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:none;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;transition:all .15s}
         .card{background:#fff;border-radius:16px;overflow:hidden}
         .input-field{background:none;border:none;outline:none;font-size:15px;width:100%;color:#1C1C1E}
