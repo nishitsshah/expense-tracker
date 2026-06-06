@@ -2,7 +2,7 @@
   "name": "Expense Tracker",
   "short_name": "Expenses",
   "description": "Track your daily expenses, sync across devices, get monthly insights.",
-  "start_url": "/",
+  "start_url": "/app/",
   "display": "standalone",
   "background_color": "#F2F2F7",
   "theme_color": "#007AFF",
