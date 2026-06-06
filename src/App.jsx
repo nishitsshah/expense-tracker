@@ -253,6 +253,7 @@ export default function App() {
   const [paymentSources, setPaymentSources] = useLocalStorage("et_payment_sources", DEFAULT_PAYMENT_SOURCES);
   const [totalBudget, setTotalBudget] = useLocalStorage("et_budget", "");
   const [categoryMandatory, setCategoryMandatory] = useLocalStorage("et_cat_mandatory", true);
+  const [fontSize, setFontSize] = useLocalStorage("et_font_size", "medium");
   const [recurringExpenses, setRecurringExpenses] = useLocalStorage("et_recurring", []);
   const [driveFileId, setDriveFileId] = useLocalStorage("et_drive_file_id", null);
   const [googleToken, setGoogleToken] = useLocalStorage("et_google_token", null);
@@ -718,8 +719,10 @@ export default function App() {
   // Show setup flow for new users
   if (!setupDone) return <SetupFlow googleUser={googleUser} onComplete={handleSetupComplete} />;
 
+  const fontScale = fontSize === "small" ? 0.88 : fontSize === "large" ? 1.15 : 1;
+
   return (
-    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative" }}>
+    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative", fontSize: `${fontScale}rem` }}>
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0}
         button,input,select{font-family:inherit}
@@ -967,6 +970,15 @@ export default function App() {
                       <div><div style={{ fontWeight:500, fontSize:16 }}>Category Mandatory</div><div style={{ fontSize:13, color:"#8E8E93", marginTop:2 }}>Require category for every expense</div></div>
                       <div onClick={() => { setCategoryMandatory(!categoryMandatory); triggerDriveSync({categoryMandatory:!categoryMandatory}); }} style={{ width:51, height:31, borderRadius:99, background:categoryMandatory?"#34C759":"#E5E5EA", cursor:"pointer", position:"relative", transition:"background .2s", flexShrink:0 }}>
                         <div style={{ position:"absolute", top:2, left:categoryMandatory?22:2, width:27, height:27, borderRadius:"50%", background:"#fff", boxShadow:"0 2px 6px rgba(0,0,0,.15)", transition:"left .2s" }} />
+                      </div>
+                    </div>
+                    <div style={{ height:1, background:"#F2F2F7", margin:"0 16px" }} />
+                    <div style={{ display:"flex", alignItems:"center", padding:"16px", justifyContent:"space-between" }}>
+                      <div><div style={{ fontWeight:500, fontSize:16 }}>Text Size</div><div style={{ fontSize:13, color:"#8E8E93", marginTop:2 }}>Adjust for readability</div></div>
+                      <div style={{ display:"flex", gap:6 }}>
+                        {[["small","A"],["medium","A"],["large","A"]].map(([size, label], i) => (
+                          <button key={size} onClick={() => { setFontSize(size); triggerDriveSync({fontSize: size}); }} style={{ width:36, height:36, borderRadius:8, border:"none", cursor:"pointer", background: fontSize===size ? "#007AFF" : "#F2F2F7", color: fontSize===size ? "#fff" : "#636366", fontWeight:600, fontSize: i===0?12:i===1?15:19 }}>{label}</button>
+                        ))}
                       </div>
                     </div>
                     <div style={{ height:1, background:"#F2F2F7", margin:"0 16px" }} />
