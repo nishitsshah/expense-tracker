@@ -700,12 +700,20 @@ export default function App() {
   const si = syncStatusInfo();
   const TABS = [{id:"add",label:"Add",icon:"＋"},{id:"history",label:"History",icon:"≡"},{id:"summary",label:"Summary",icon:"◑"},{id:"settings",label:"Settings",icon:"⚙"}];
 
-  // Auto-trigger Google OAuth if not authenticated
+  // Auto-trigger Google OAuth if not authenticated — retry until SDK ready
   useEffect(() => {
-    if (!googleToken && tokenClientRef.current) {
-      setTimeout(() => handleGoogleLogin(), 500);
-    }
-  }, [googleToken, tokenClientRef.current]);
+    if (googleToken) return;
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (tokenClientRef.current) {
+        clearInterval(interval);
+        handleGoogleLogin();
+      }
+      if (attempts > 20) clearInterval(interval); // give up after 10s
+    }, 500);
+    return () => clearInterval(interval);
+  }, [googleToken]);
 
   if (!googleToken) {
     return (
