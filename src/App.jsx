@@ -612,7 +612,18 @@ export default function App() {
     else { const u=[...paymentSources]; const [m]=u.splice(dragIdx,1); u.splice(i,0,m); setPaymentSources(u); triggerDriveSync({paymentSources:u}); }
     setDragIdx(null); setDragOverIdx(null); setDragType(null);
   };
-  const handleTouchStart = (e, i, type) => { touchDragIdx.current=i; setDragIdx(i); setDragType(type); };
+  const handleTouchStart = (e, i, type) => {
+    // Only initiate drag after a long press (300ms) on the handle
+    const timer = setTimeout(() => {
+      touchDragIdx.current = i;
+      setDragIdx(i);
+      setDragType(type);
+    }, 300);
+    e.currentTarget._dragTimer = timer;
+  };
+  const handleTouchCancel = (e) => {
+    clearTimeout(e.currentTarget._dragTimer);
+  };
   const handleTouchMove = (e) => { e.preventDefault(); const t=e.touches[0]; const el=document.elementFromPoint(t.clientX,t.clientY); const row=el?.closest("[data-drag-idx]"); if (row) { const idx=parseInt(row.getAttribute("data-drag-idx")); if (!isNaN(idx)) setDragOverIdx(idx); } };
   const handleTouchEnd = (type) => {
     if (touchDragIdx.current!==null&&dragOverIdx!==null&&touchDragIdx.current!==dragOverIdx) {
@@ -998,8 +1009,8 @@ export default function App() {
                     {categories.map((c,i) => (
                       <div key={c.id} data-drag-idx={i} className={`drag-row${dragOverIdx===i&&dragType==="cat"?" over":""}`}
                         draggable onDragStart={() => handleDragStart(i,"cat")} onDragOver={e => handleDragOver(e,i)} onDrop={() => handleDrop(i,"cat")} onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-                        style={{ display:"flex", alignItems:"center", padding:"12px 16px", gap:10, borderBottom:i<categories.length-1?"1px solid #F2F2F7":"none", opacity:dragIdx===i&&dragType==="cat"?0.4:1, touchAction:"none" }}>
-                        <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none" }} onTouchStart={e => handleTouchStart(e,i,"cat")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("cat")}>☰</span>
+                        style={{ display:"flex", alignItems:"center", padding:"12px 16px", gap:10, borderBottom:i<categories.length-1?"1px solid #F2F2F7":"none", opacity:dragIdx===i&&dragType==="cat"?0.4:1 }}>
+                        <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none", touchAction:"none" }} onTouchStart={e => handleTouchStart(e,i,"cat")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("cat")}>☰</span>
                         <div style={{ width:14, height:14, borderRadius:"50%", background:c.color, flexShrink:0 }} />
                         <span style={{ flex:1, fontWeight:500, fontSize:15 }}>{c.label}</span>
                         <button onClick={() => { setEditCat(c); setNewItemLabel(c.label); setNewItemColor(c.color); }} style={{ background:"#E8F0FE", border:"none", cursor:"pointer", color:"#007AFF", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8, marginRight:6 }}>Edit</button>
@@ -1017,8 +1028,8 @@ export default function App() {
                     {paymentSources.map((p,i) => (
                       <div key={p.id} data-drag-idx={i} className={`drag-row${dragOverIdx===i&&dragType==="pay"?" over":""}`}
                         draggable onDragStart={() => handleDragStart(i,"pay")} onDragOver={e => handleDragOver(e,i)} onDrop={() => handleDrop(i,"pay")} onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
-                        style={{ display:"flex", alignItems:"center", padding:"12px 16px", gap:10, borderBottom:i<paymentSources.length-1?"1px solid #F2F2F7":"none", opacity:dragIdx===i&&dragType==="pay"?0.4:1, touchAction:"none" }}>
-                        <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none" }} onTouchStart={e => handleTouchStart(e,i,"pay")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("pay")}>☰</span>
+                        style={{ display:"flex", alignItems:"center", padding:"12px 16px", gap:10, borderBottom:i<paymentSources.length-1?"1px solid #F2F2F7":"none", opacity:dragIdx===i&&dragType==="pay"?0.4:1 }}>
+                        <span style={{ fontSize:18, color:"#C7C7CC", cursor:"grab", padding:"4px", userSelect:"none", touchAction:"none" }} onTouchStart={e => handleTouchStart(e,i,"pay")} onTouchMove={handleTouchMove} onTouchEnd={() => handleTouchEnd("pay")}>☰</span>
                         <div style={{ width:14, height:14, borderRadius:"50%", background:p.color, flexShrink:0 }} />
                         <span style={{ flex:1, fontWeight:500, fontSize:15 }}>{p.label}</span>
                         <button onClick={() => { setEditPay(p); setNewItemLabel(p.label); setNewItemColor(p.color); }} style={{ background:"#E8F0FE", border:"none", cursor:"pointer", color:"#007AFF", fontSize:13, fontWeight:500, padding:"5px 12px", borderRadius:8, marginRight:6 }}>Edit</button>
