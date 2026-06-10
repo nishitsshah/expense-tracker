@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 
 const GOOGLE_CLIENT_ID = "82756044682-ovvcfig11hhc3v1grbb2vgsus4k9k90o.apps.googleusercontent.com";
-const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file email profile";
 const DRIVE_FILE_NAME = "expense-tracker-data.json";
-const TOKEN_REFRESH_INTERVAL = 45 * 60 * 1000; // refresh every 45 min (token lasts 60)
+const AUTH_API = "/api/auth";
+const REDIRECT_URI = window.location.origin + "/app.html";
 
 function useLocalStorage(key, defaultValue) {
   const [value, setValue] = useState(() => {
@@ -258,6 +259,7 @@ export default function App() {
   const [driveFileId, setDriveFileId] = useLocalStorage("et_drive_file_id", null);
   const [googleToken, setGoogleToken] = useLocalStorage("et_google_token", null);
   const [googleUser, setGoogleUser] = useLocalStorage("et_google_user", null);
+  const [refreshToken, setRefreshToken] = useLocalStorage("et_refresh_token", null);
   const [lastSyncedAt, setLastSyncedAt] = useLocalStorage("et_last_synced", null);
   const [pendingSync, setPendingSync] = useLocalStorage("et_pending_sync", false);
   const [setupDone, setSetupDone] = useLocalStorage("et_setup_done", false);
@@ -318,22 +320,77 @@ export default function App() {
     script.async = true;
     script.onload = initGoogleAuth;
     document.head.appendChild(script);
+    // Check for auth code in URL (redirect back from Google)
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (code) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      exchangeCodeForTokens(code);
+    } else if (refreshToken && !googleToken) {
+      // Have refresh token but no access token — silently refresh
+      silentRefresh();
+    }
   }, []);
 
   // On token load, pull from Drive
   useEffect(() => { if (googleToken && isOnline) loadFromDrive(googleToken); }, [googleToken]);
 
-  // Silent token refresh — runs every 45 min to prevent logout
+  // Auto refresh token 5 min before expiry
   useEffect(() => {
-    if (!googleToken) { clearInterval(tokenRefreshIntervalRef.current); return; }
-    const doSilentRefresh = () => {
-      if (!tokenClientRef.current) return;
-      // prompt: none means it refreshes silently without showing a popup
-      tokenClientRef.current.requestAccessToken({ prompt: "" });
-    };
-    tokenRefreshIntervalRef.current = setInterval(doSilentRefresh, TOKEN_REFRESH_INTERVAL);
-    return () => clearInterval(tokenRefreshIntervalRef.current);
-  }, [googleToken]);
+    if (!googleToken || !refreshToken) return;
+    const timer = setTimeout(() => silentRefresh(), 55 * 60 * 1000); // refresh after 55 min
+    return () => clearTimeout(timer);
+  }, [googleToken, refreshToken]);
+
+  const initGoogleAuth = () => {};
+
+  const handleGoogleLogin = () => {
+    // Redirect to Google OAuth with code flow
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: "code",
+      scope: GOOGLE_SCOPE,
+      access_type: "offline",
+      prompt: "consent",
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+  };
+
+  const exchangeCodeForTokens = async (code) => {
+    try {
+      const res = await fetch(AUTH_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "exchange", code }),
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        setGoogleToken(data.access_token);
+        if (data.refresh_token) setRefreshToken(data.refresh_token);
+        await fetchGoogleUser(data.access_token);
+      }
+    } catch (e) { console.error("Token exchange failed", e); }
+  };
+
+  const silentRefresh = async () => {
+    if (!refreshToken) return;
+    try {
+      const res = await fetch(AUTH_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh", refresh_token: refreshToken }),
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        setGoogleToken(data.access_token);
+        setSyncStatus("synced");
+      } else {
+        // Refresh token invalid — need to re-login
+        setRefreshToken(null); setGoogleToken(null);
+      }
+    } catch (e) { console.error("Silent refresh failed", e); }
+  };
 
   // Check recurring expenses on load
   useEffect(() => { if (setupDone) processRecurringExpenses(); }, [setupDone]);
@@ -368,8 +425,8 @@ export default function App() {
   };
 
   const handleGoogleLogout = () => {
-    if (googleToken && window.google) window.google.accounts.oauth2.revoke(googleToken);
-    setGoogleToken(null); setGoogleUser(null); setDriveFileId(null); setSyncStatus("idle");
+    setGoogleToken(null); setGoogleUser(null); setDriveFileId(null);
+    setRefreshToken(null); setSyncStatus("idle");
     showToast("Signed out");
   };
 
