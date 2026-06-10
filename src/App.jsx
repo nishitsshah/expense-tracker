@@ -395,33 +395,12 @@ export default function App() {
   // Check recurring expenses on load
   useEffect(() => { if (setupDone) processRecurringExpenses(); }, [setupDone]);
 
-  const initGoogleAuth = () => {
-    if (!window.google) return;
-    tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: GOOGLE_SCOPE + " email profile",
-      callback: async (response) => {
-        if (response.access_token) {
-          setGoogleToken(response.access_token);
-          // Only fetch user info on first login (not silent refresh)
-          if (!googleUser) await fetchGoogleUser(response.access_token);
-          await loadFromDrive(response.access_token);
-        }
-      },
-    });
-  };
-
   const fetchGoogleUser = async (token) => {
     try {
       const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setGoogleUser({ name: data.given_name || data.name, email: data.email, picture: data.picture });
     } catch {}
-  };
-
-  const handleGoogleLogin = () => {
-    if (!tokenClientRef.current) return showToast("Google not loaded yet", false);
-    tokenClientRef.current.requestAccessToken();
   };
 
   const handleGoogleLogout = () => {
@@ -790,13 +769,11 @@ export default function App() {
   const fontScale = fontSize === "small" ? 0.88 : fontSize === "large" ? 1.15 : 1;
 
   return (
-    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative", "--fs": fontScale }}>
+    <div style={{ fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", background:"#F2F2F7", minHeight:"100vh", maxWidth:430, margin:"0 auto", position:"relative", zoom: fontScale }}>
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0}
         button,input,select{font-family:inherit}
         ::-webkit-scrollbar{display:none}
-        #root > div { font-size: calc(16px * var(--fs, 1)); }
-        #root > div * { font-size: inherit; }
         .cat-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:none;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;transition:all .15s}
         .card{background:#fff;border-radius:16px;overflow:hidden}
         .input-field{background:none;border:none;outline:none;font-size:15px;width:100%;color:#1C1C1E}
