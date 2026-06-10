@@ -428,23 +428,34 @@ export default function App() {
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { if (res.status === 401) setGoogleToken(null); if (res.status === 404) setDriveFileId(null); setSyncStatus("error"); return; }
       const driveData = await res.json();
+      // Merge expenses — deduplicate by id
       const localIds = new Set(expenses.map(e => e.id));
       const merged = [...expenses, ...(driveData.expenses||[]).filter(e => !localIds.has(e.id))].sort((a,b) => b.id-a.id);
       setExpenses(merged);
-      if (driveData.categories?.length) setCategories(driveData.categories);
-      if (driveData.paymentSources?.length) setPaymentSources(driveData.paymentSources);
+      // Merge categories — keep local ones, add any from Drive that don't exist locally
+      const localCatIds = new Set(categories.map(c => c.id));
+      const driveCats = (driveData.categories||[]).filter(c => !localCatIds.has(c.id));
+      const mergedCats = driveCats.length > 0 ? [...categories, ...driveCats] : categories;
+      if (mergedCats.length > 0) setCategories(mergedCats);
+      // Merge payment sources — keep local ones, add any from Drive that don't exist locally
+      const localPayIds = new Set(paymentSources.map(p => p.id));
+      const drivePays = (driveData.paymentSources||[]).filter(p => !localPayIds.has(p.id));
+      const mergedPays = drivePays.length > 0 ? [...paymentSources, ...drivePays] : paymentSources;
+      if (mergedPays.length > 0) setPaymentSources(mergedPays);
       if (driveData.totalBudget !== undefined) setTotalBudget(driveData.totalBudget);
       if (driveData.categoryMandatory !== undefined) setCategoryMandatory(driveData.categoryMandatory);
       if (driveData.recurringExpenses?.length) setRecurringExpenses(driveData.recurringExpenses);
+      if (driveData.fontSize) setFontSize(driveData.fontSize);
       if (driveData.setupDone) setSetupDone(true);
       setLastSyncedAt(new Date().toISOString()); setPendingSync(false); setSyncStatus("synced");
-      await writeToDrive(token, merged, driveData.categories||categories, driveData.paymentSources||paymentSources, driveData.totalBudget||totalBudget, driveData.categoryMandatory??categoryMandatory, driveData.recurringExpenses||recurringExpenses, true, fileId);
+      // Write merged data back to Drive
+      await writeToDrive(token, merged, mergedCats, mergedPays, driveData.totalBudget||totalBudget, driveData.categoryMandatory??categoryMandatory, driveData.recurringExpenses||recurringExpenses, driveData.fontSize||fontSize, true, fileId);
     } catch { setSyncStatus("error"); }
   };
 
-  const writeToDrive = useCallback(async (token, exp, cats, pays, budget, catMand, recur, setupD, fileId) => {
+  const writeToDrive = useCallback(async (token, exp, cats, pays, budget, catMand, recur, fs, setupD, fileId) => {
     if (!token || !isOnline) { setPendingSync(true); return false; }
-    const content = JSON.stringify({ expenses:exp, categories:cats, paymentSources:pays, totalBudget:budget, categoryMandatory:catMand, recurringExpenses:recur, setupDone:setupD, updatedAt:new Date().toISOString() });
+    const content = JSON.stringify({ expenses:exp, categories:cats, paymentSources:pays, totalBudget:budget, categoryMandatory:catMand, recurringExpenses:recur, fontSize:fs, setupDone:setupD, updatedAt:new Date().toISOString() });
     const boundary = "et_boundary_xyz";
     const meta = JSON.stringify({ name: DRIVE_FILE_NAME, mimeType: "application/json" });
     const body = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
@@ -470,7 +481,7 @@ export default function App() {
     const recur = overrides.recurringExpenses ?? recurringExpenses;
     const sd = overrides.setupDone ?? setupDone;
     syncTimeoutRef.current = setTimeout(async () => {
-      const ok = await writeToDrive(googleToken, exp, cats, pays, bgt, catM, recur, sd, driveFileId);
+      const ok = await writeToDrive(googleToken, exp, cats, pays, bgt, catM, recur, overrides.fontSize ?? fontSize, sd, driveFileId);
       setSyncStatus(ok ? "synced" : isOnline ? "error" : "offline");
     }, 1500);
   }, [googleToken, isOnline, expenses, categories, paymentSources, totalBudget, categoryMandatory, recurringExpenses, setupDone, driveFileId, writeToDrive]);
