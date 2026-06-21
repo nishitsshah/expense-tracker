@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 
-const GOOGLE_CLIENT_ID = "82756044682-ovvcfig11hhc3v1grbb2vgsus4k9k90o.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file email profile";
 const DRIVE_FILE_NAME = "expense-tracker-data.json";
 const AUTH_API = "/api/auth";
