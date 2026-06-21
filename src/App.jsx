@@ -82,7 +82,7 @@ function DropdownSelect({ value, onChange, options, placeholder }) {
   }, []);
 
   return (
-    <div ref={ref} style={{ position:"relative" }}>
+    <div ref={ref} style={{ position:"relative", zIndex:open?50:1 }}>
       <button onClick={() => setOpen(o => !o)} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, background:"none", border:"none", cursor:"pointer", padding:0, textAlign:"left" }}>
         {selected
           ? <><span style={{ width:10, height:10, borderRadius:"50%", background:selected.color, flexShrink:0 }}/><span style={{ flex:1, fontSize:16, color:"#1C1C1E", fontWeight:500 }}>{selected.label}</span></>
@@ -91,7 +91,7 @@ function DropdownSelect({ value, onChange, options, placeholder }) {
         <span style={{ color:"#C7C7CC", fontSize:14, display:"inline-block", transform:open?"rotate(180deg)":"rotate(0deg)", transition:"transform .2s" }}>▾</span>
       </button>
       {open && (
-        <div style={{ position:"absolute", left:0, right:0, top:"calc(100% + 8px)", background:"#fff", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,.15)", zIndex:100, overflow:"hidden", border:"1px solid #E5E5EA" }}>
+        <div style={{ position:"absolute", left:0, right:0, top:"calc(100% + 8px)", background:"#fff", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,.15)", zIndex:100, overflow:"hidden", border:"1px solid #E5E5EA", maxHeight:280, overflowY:"auto" }}>
           {value && (
             <button onClick={() => { onChange(""); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:"none", border:"none", borderBottom:"1px solid #F2F2F7", cursor:"pointer", fontSize:15, color:"#8E8E93" }}>
               <span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/>None
@@ -807,12 +807,12 @@ export default function App() {
               <input className="input-field" style={{fontSize:16}} placeholder="What was this for?" value={narration} onChange={e=>setNarration(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdd()}/>
             </div>
             {/* FEATURE 5: Category dropdown */}
-            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12,position:"relative",zIndex:20}}>
               <div style={{fontSize:13,color:"#8E8E93",marginBottom:12}}>🏷️ Category {categoryMandatory&&<span style={{color:"#FF3B30"}}>*</span>}</div>
               <DropdownSelect value={selCat} onChange={setSelCat} options={categories} placeholder="Select category"/>
             </div>
             {/* FEATURE 5: Payment source dropdown */}
-            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12,position:"relative",zIndex:10}}>
               <div style={{fontSize:13,color:"#8E8E93",marginBottom:12}}>💳 Payment Source <span style={{color:"#C7C7CC",fontSize:12}}>(optional)</span></div>
               <DropdownSelect value={selPay} onChange={setSelPay} options={paymentSources} placeholder="Select payment source"/>
             </div>
