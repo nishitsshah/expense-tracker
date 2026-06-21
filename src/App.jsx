@@ -807,12 +807,12 @@ export default function App() {
               <input className="input-field" style={{fontSize:16}} placeholder="What was this for?" value={narration} onChange={e=>setNarration(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdd()}/>
             </div>
             {/* FEATURE 5: Category dropdown */}
-            <div className="card" style={{padding:"16px 20px",marginBottom:12}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12}}>
               <div style={{fontSize:13,color:"#8E8E93",marginBottom:12}}>🏷️ Category {categoryMandatory&&<span style={{color:"#FF3B30"}}>*</span>}</div>
               <DropdownSelect value={selCat} onChange={setSelCat} options={categories} placeholder="Select category"/>
             </div>
             {/* FEATURE 5: Payment source dropdown */}
-            <div className="card" style={{padding:"16px 20px",marginBottom:12}}>
+            <div style={{background:"#fff",borderRadius:16,padding:"16px 20px",marginBottom:12}}>
               <div style={{fontSize:13,color:"#8E8E93",marginBottom:12}}>💳 Payment Source <span style={{color:"#C7C7CC",fontSize:12}}>(optional)</span></div>
               <DropdownSelect value={selPay} onChange={setSelPay} options={paymentSources} placeholder="Select payment source"/>
             </div>
