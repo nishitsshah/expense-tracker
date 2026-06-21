@@ -376,8 +376,8 @@ export default function App() {
       const data = await res.json();
       if (data.access_token) {
         setGoogleToken(data.access_token);
-        // Store expiry: Google access tokens last 1 hour, store 55 min to be safe
-        setTokenExpiry(new Date(Date.now() + 55*60*1000).toISOString());
+        const expiresIn = (data.expires_in || 3600) - 120; // 2 min buffer
+        setTokenExpiry(new Date(Date.now() + expiresIn*1000).toISOString());
         if (data.refresh_token) setRefreshToken(data.refresh_token);
         await fetchGoogleUser(data.access_token);
       }
@@ -393,7 +393,8 @@ export default function App() {
       const data = await res.json();
       if (data.access_token) {
         setGoogleToken(data.access_token);
-        setTokenExpiry(new Date(Date.now() + 55*60*1000).toISOString());
+        const expiresIn = (data.expires_in || 3600) - 120; // 2 min buffer
+        setTokenExpiry(new Date(Date.now() + expiresIn*1000).toISOString());
         setSyncStatus("synced");
         refreshingRef.current = false;
         return data.access_token;
@@ -409,15 +410,16 @@ export default function App() {
     }
   };
 
-  // Get a valid token, refreshing if expired — call this before any API operation
+  // Get a valid token — reads localStorage directly to avoid stale React state in callbacks
   const getValidToken = async () => {
-    if (!googleToken && !refreshToken) return null;
-    const expiry = tokenExpiry ? new Date(tokenExpiry) : null;
-    const isExpired = !expiry || expiry - Date.now() < 2 * 60 * 1000; // refresh if <2 min left
-    if (isExpired && refreshToken) {
-      return await silentRefresh();
-    }
-    return googleToken;
+    const storedToken = (() => { try { return JSON.parse(localStorage.getItem("et_google_token")); } catch { return null; } })();
+    const storedExpiry = (() => { try { return JSON.parse(localStorage.getItem("et_token_expiry")); } catch { return null; } })();
+    const storedRefresh = (() => { try { return JSON.parse(localStorage.getItem("et_refresh_token")); } catch { return null; } })();
+    if (!storedToken && !storedRefresh) return null;
+    const expiry = storedExpiry ? new Date(storedExpiry) : null;
+    const isExpired = !expiry || expiry - Date.now() < 2 * 60 * 1000;
+    if (isExpired && storedRefresh) return await silentRefresh();
+    return storedToken;
   };
 
   const fetchGoogleUser = async (token) => {
