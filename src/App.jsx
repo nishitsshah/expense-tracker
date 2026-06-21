@@ -113,27 +113,28 @@ function DropdownSelect({ value, onChange, options, placeholder }) {
   const dropdown = open && rect ? (
     <div ref={portalRef} style={{
       position:"fixed",
-      top: rect.bottom + 8,
+      top: rect.bottom + 6,
       left: rect.left,
       width: rect.width,
       background:"#fff",
-      borderRadius:14,
-      boxShadow:"0 8px 32px rgba(0,0,0,.18)",
+      borderRadius:12,
+      boxShadow:"0 4px 24px rgba(0,0,0,.13)",
       zIndex:9999,
       border:"1px solid #E5E5EA",
-      maxHeight:260,
+      maxHeight:240,
       overflowY:"auto",
+      fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif",
     }}>
       {value && (
-        <button onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(""); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:"none", border:"none", borderBottom:"1px solid #F2F2F7", cursor:"pointer", fontSize:15, color:"#8E8E93" }}>
-          <span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/>None
+        <button onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(""); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"none", border:"none", borderBottom:"1px solid #F2F2F7", cursor:"pointer", fontSize:14, color:"#8E8E93", fontFamily:"inherit" }}>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/>None
         </button>
       )}
       {options.map((o, i) => (
-        <button key={o.id} onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(o.id); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:value===o.id?"#F0F7FF":"none", border:"none", borderBottom:i<options.length-1?"1px solid #F2F2F7":"none", cursor:"pointer", fontSize:15, color:"#1C1C1E", fontWeight:value===o.id?600:400 }}>
-          <span style={{ width:10, height:10, borderRadius:"50%", background:o.color, flexShrink:0 }}/>
+        <button key={o.id} onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(o.id); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:value===o.id?"#F0F7FF":"none", border:"none", borderBottom:i<options.length-1?"1px solid #F2F2F7":"none", cursor:"pointer", fontSize:14, color:"#1C1C1E", fontWeight:value===o.id?600:400, fontFamily:"inherit" }}>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:o.color, flexShrink:0 }}/>
           <span style={{ flex:1, textAlign:"left" }}>{o.label}</span>
-          {value===o.id && <span style={{ color:"#007AFF", fontSize:13 }}>✓</span>}
+          {value===o.id && <span style={{ color:"#007AFF", fontSize:12 }}>✓</span>}
         </button>
       ))}
     </div>
