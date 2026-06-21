@@ -319,9 +319,11 @@ export default function App() {
   const [recurringForm, setRecurringForm] = useState({ name:"", amount:"", category:"", paymentSource:"", frequency:"Monthly", customDays:"", startDate:today(), endDate:"", reminderDays:"7", active:true });
   // FEATURE 6: drill-down state
   const [drillCatId, setDrillCatId] = useState(null);
+  const [tokenExpiry, setTokenExpiry] = useLocalStorage("et_token_expiry", null);
   const importRef = useRef(null);
   const touchDragIdx = useRef(null);
   const syncTimeoutRef = useRef(null);
+  const refreshingRef = useRef(false);
 
   useEffect(() => {
     const onOnline = () => { setIsOnline(true); if (pendingSync && googleToken) triggerDriveSync(); };
@@ -347,11 +349,20 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (googleToken && isOnline) loadFromDrive(googleToken); }, [googleToken]);
+
+  // Refresh on app visibility (coming back from background/sleep)
   useEffect(() => {
-    if (!googleToken || !refreshToken) return;
-    const timer = setTimeout(() => silentRefresh(), 55*60*1000);
-    return () => clearTimeout(timer);
-  }, [googleToken, refreshToken]);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && refreshToken) {
+        const expiry = tokenExpiry ? new Date(tokenExpiry) : null;
+        const expiresSoon = !expiry || expiry - Date.now() < 5 * 60 * 1000;
+        if (expiresSoon) silentRefresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshToken, tokenExpiry]);
+
   useEffect(() => { if (setupDone) processRecurringExpenses(); }, [setupDone]);
 
   const handleGoogleLogin = () => {
@@ -363,18 +374,50 @@ export default function App() {
     try {
       const res = await fetch(AUTH_API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"exchange",code}) });
       const data = await res.json();
-      if (data.access_token) { setGoogleToken(data.access_token); if (data.refresh_token) setRefreshToken(data.refresh_token); await fetchGoogleUser(data.access_token); }
+      if (data.access_token) {
+        setGoogleToken(data.access_token);
+        // Store expiry: Google access tokens last 1 hour, store 55 min to be safe
+        setTokenExpiry(new Date(Date.now() + 55*60*1000).toISOString());
+        if (data.refresh_token) setRefreshToken(data.refresh_token);
+        await fetchGoogleUser(data.access_token);
+      }
     } catch(e) { console.error("Token exchange failed", e); }
   };
 
   const silentRefresh = async () => {
-    if (!refreshToken) return;
+    if (!refreshToken) return null;
+    if (refreshingRef.current) return null; // prevent concurrent refreshes
+    refreshingRef.current = true;
     try {
       const res = await fetch(AUTH_API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"refresh",refresh_token:refreshToken}) });
       const data = await res.json();
-      if (data.access_token) { setGoogleToken(data.access_token); setSyncStatus("synced"); }
-      else { setRefreshToken(null); setGoogleToken(null); }
-    } catch(e) { console.error("Silent refresh failed", e); }
+      if (data.access_token) {
+        setGoogleToken(data.access_token);
+        setTokenExpiry(new Date(Date.now() + 55*60*1000).toISOString());
+        setSyncStatus("synced");
+        refreshingRef.current = false;
+        return data.access_token;
+      } else {
+        setRefreshToken(null); setGoogleToken(null); setTokenExpiry(null);
+        refreshingRef.current = false;
+        return null;
+      }
+    } catch(e) {
+      console.error("Silent refresh failed", e);
+      refreshingRef.current = false;
+      return null;
+    }
+  };
+
+  // Get a valid token, refreshing if expired — call this before any API operation
+  const getValidToken = async () => {
+    if (!googleToken && !refreshToken) return null;
+    const expiry = tokenExpiry ? new Date(tokenExpiry) : null;
+    const isExpired = !expiry || expiry - Date.now() < 2 * 60 * 1000; // refresh if <2 min left
+    if (isExpired && refreshToken) {
+      return await silentRefresh();
+    }
+    return googleToken;
   };
 
   const fetchGoogleUser = async (token) => {
@@ -400,7 +443,10 @@ export default function App() {
   };
 
   const loadFromDrive = async (token) => {
-    if (!token || !isOnline) return;
+    if (!isOnline) return;
+    const validToken = await getValidToken();
+    if (!validToken) return;
+    token = validToken;
     setSyncStatus("syncing");
     try {
       let fileId = driveFileId || await findDriveFile(token);
@@ -431,7 +477,10 @@ export default function App() {
   };
 
   const writeToDrive = useCallback(async (token, exp, cats, pays, budget, catMand, recur, fs, setupD, fileId) => {
-    if (!token || !isOnline) { setPendingSync(true); return false; }
+    if (!isOnline) { setPendingSync(true); return false; }
+    const validToken = await getValidToken();
+    if (!validToken) { setPendingSync(true); return false; }
+    token = validToken;
     const content = JSON.stringify({ expenses:exp, categories:cats, paymentSources:pays, totalBudget:budget, categoryMandatory:catMand, recurringExpenses:recur, fontSize:fs, setupDone:setupD, updatedAt:new Date().toISOString() });
     const boundary = "et_boundary_xyz";
     const meta = JSON.stringify({ name:DRIVE_FILE_NAME, mimeType:"application/json" });
