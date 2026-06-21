@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import ReactDOM from "react-dom";
 
 const GOOGLE_CLIENT_ID = "82756044682-ovvcfig11hhc3v1grbb2vgsus4k9k90o.apps.googleusercontent.com";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file email profile";
@@ -69,44 +70,88 @@ function SubToggle({ value, onChange, options }) {
   );
 }
 
-// FEATURE 5: Dropdown selector for category / payment source
+// FEATURE 5: Dropdown selector — portal-based to avoid clipping by any parent overflow
 function DropdownSelect({ value, onChange, options, placeholder }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [rect, setRect] = useState(null);
+  const triggerRef = useRef(null);
+  const portalRef = useRef(null);
   const selected = options.find(o => o.id === value);
 
+  const openDropdown = () => {
+    if (triggerRef.current) {
+      setRect(triggerRef.current.getBoundingClientRect());
+    }
+    setOpen(true);
+  };
+
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (!open) return;
+    const handler = (e) => {
+      if (triggerRef.current && triggerRef.current.contains(e.target)) return;
+      if (portalRef.current && portalRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [open]);
+
+  // Recalculate position on scroll
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      if (triggerRef.current) setRect(triggerRef.current.getBoundingClientRect());
+    };
+    window.addEventListener("scroll", update, true);
+    return () => window.removeEventListener("scroll", update, true);
+  }, [open]);
+
+  const dropdown = open && rect ? (
+    <div ref={portalRef} style={{
+      position:"fixed",
+      top: rect.bottom + 8,
+      left: rect.left,
+      width: rect.width,
+      background:"#fff",
+      borderRadius:14,
+      boxShadow:"0 8px 32px rgba(0,0,0,.18)",
+      zIndex:9999,
+      border:"1px solid #E5E5EA",
+      maxHeight:260,
+      overflowY:"auto",
+    }}>
+      {value && (
+        <button onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(""); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:"none", border:"none", borderBottom:"1px solid #F2F2F7", cursor:"pointer", fontSize:15, color:"#8E8E93" }}>
+          <span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/>None
+        </button>
+      )}
+      {options.map((o, i) => (
+        <button key={o.id} onMouseDown={e=>e.preventDefault()} onClick={() => { onChange(o.id); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:value===o.id?"#F0F7FF":"none", border:"none", borderBottom:i<options.length-1?"1px solid #F2F2F7":"none", cursor:"pointer", fontSize:15, color:"#1C1C1E", fontWeight:value===o.id?600:400 }}>
+          <span style={{ width:10, height:10, borderRadius:"50%", background:o.color, flexShrink:0 }}/>
+          <span style={{ flex:1, textAlign:"left" }}>{o.label}</span>
+          {value===o.id && <span style={{ color:"#007AFF", fontSize:13 }}>✓</span>}
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   return (
-    <div ref={ref} style={{ position:"relative", zIndex:open?50:1 }}>
-      <button onClick={() => setOpen(o => !o)} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, background:"none", border:"none", cursor:"pointer", padding:0, textAlign:"left" }}>
-        {selected
-          ? <><span style={{ width:10, height:10, borderRadius:"50%", background:selected.color, flexShrink:0 }}/><span style={{ flex:1, fontSize:16, color:"#1C1C1E", fontWeight:500 }}>{selected.label}</span></>
-          : <><span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/><span style={{ flex:1, fontSize:16, color:"#C7C7CC" }}>{placeholder}</span></>
-        }
-        <span style={{ color:"#C7C7CC", fontSize:14, display:"inline-block", transform:open?"rotate(180deg)":"rotate(0deg)", transition:"transform .2s" }}>▾</span>
-      </button>
-      {open && (
-        <div style={{ position:"absolute", left:0, right:0, top:"calc(100% + 8px)", background:"#fff", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,.15)", zIndex:100, overflow:"hidden", border:"1px solid #E5E5EA", maxHeight:280, overflowY:"auto" }}>
-          {value && (
-            <button onClick={() => { onChange(""); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:"none", border:"none", borderBottom:"1px solid #F2F2F7", cursor:"pointer", fontSize:15, color:"#8E8E93" }}>
-              <span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/>None
-            </button>
-          )}
-          {options.map((o, i) => (
-            <button key={o.id} onClick={() => { onChange(o.id); setOpen(false); }} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"13px 16px", background:value===o.id?"#F0F7FF":"none", border:"none", borderBottom:i<options.length-1?"1px solid #F2F2F7":"none", cursor:"pointer", fontSize:15, color:"#1C1C1E", fontWeight:value===o.id?600:400 }}>
-              <span style={{ width:10, height:10, borderRadius:"50%", background:o.color, flexShrink:0 }}/>
-              <span style={{ flex:1 }}>{o.label}</span>
-              {value===o.id && <span style={{ color:"#007AFF", fontSize:13 }}>✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <>
+      <div ref={triggerRef}>
+        <button onClick={() => open ? setOpen(false) : openDropdown()} style={{ width:"100%", display:"flex", alignItems:"center", gap:10, background:"none", border:"none", cursor:"pointer", padding:0, textAlign:"left" }}>
+          {selected
+            ? <><span style={{ width:10, height:10, borderRadius:"50%", background:selected.color, flexShrink:0 }}/><span style={{ flex:1, fontSize:16, color:"#1C1C1E", fontWeight:500 }}>{selected.label}</span></>
+            : <><span style={{ width:10, height:10, borderRadius:"50%", background:"#C7C7CC", flexShrink:0 }}/><span style={{ flex:1, fontSize:16, color:"#C7C7CC" }}>{placeholder}</span></>
+          }
+          <span style={{ color:"#C7C7CC", fontSize:14, display:"inline-block", transform:open?"rotate(180deg)":"rotate(0deg)", transition:"transform .2s" }}>▾</span>
+        </button>
+      </div>
+      {typeof document !== "undefined" && dropdown && ReactDOM.createPortal(dropdown, document.body)}
+    </>
   );
 }
 
